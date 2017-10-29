@@ -15,6 +15,10 @@
             onclick="window.open(this.href, 'share-twitter', 'width=550,height=235');return false;">
             {{> "icons/twitter"}}
         </a>
+        <a class="floating-header-share-linkedin" href="https://www.linkedin.com/shareArticle?mini=true&amp;title={{encode title}}&amp;url={{url absolute="true"}}"
+            onclick="window.open(this.href, 'share-linkedin','width=580,height=484');return false;">
+            {{> "icons/linkedin"}}
+        </a>
         <a class="floating-header-share-fb" href="https://www.facebook.com/sharer/sharer.php?u={{url absolute="true"}}"
             onclick="window.open(this.href, 'share-facebook','width=580,height=296');return false;">
             {{> "icons/facebook"}}
