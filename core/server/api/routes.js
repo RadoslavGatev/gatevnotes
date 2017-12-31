@@ -84,9 +84,11 @@ module.exports = function apiRoutes() {
         api.http(api.subscribers.importCSV)
     );
     apiRouter.get('/subscribers/:id', labs.subscribers, mw.authenticatePrivate, api.http(api.subscribers.read));
+    apiRouter.get('/subscribers/email/:email', labs.subscribers, mw.authenticatePrivate, api.http(api.subscribers.read));
     apiRouter.post('/subscribers', labs.subscribers, mw.authenticatePublic, api.http(api.subscribers.add));
     apiRouter.put('/subscribers/:id', labs.subscribers, mw.authenticatePrivate, api.http(api.subscribers.edit));
     apiRouter.del('/subscribers/:id', labs.subscribers, mw.authenticatePrivate, api.http(api.subscribers.destroy));
+    apiRouter.del('/subscribers/email/:email', labs.subscribers, mw.authenticatePrivate, api.http(api.subscribers.destroy));
 
     // ## Roles
     apiRouter.get('/roles/', mw.authenticatePrivate, api.http(api.roles.browse));
@@ -198,6 +200,10 @@ module.exports = function apiRoutes() {
         validation.upload({type: 'redirects'}),
         api.http(api.redirects.upload)
     );
+
+    // ## Webhooks (RESTHooks)
+    apiRouter.post('/webhooks', mw.authenticatePrivate, api.http(api.webhooks.add));
+    apiRouter.del('/webhooks/:id', mw.authenticatePrivate, api.http(api.webhooks.destroy));
 
     return apiRouter;
 };

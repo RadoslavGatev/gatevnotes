@@ -417,6 +417,9 @@
                 },
                 "notAllowedToInviteOwner": "Not allowed to invite an owner user.",
                 "notAllowedToInvite": "Not allowed to invite this role."
+            },
+            "webhooks": {
+                "webhookAlreadyExists": "A webhook for requested event with supplied target_url already exists."
             }
         },
         "data": {
@@ -586,7 +589,10 @@
                     "valueExceedsMaxLength": "Value in [{tableName}.{columnKey}] exceeds maximum length of {maxlength} characters.",
                     "valueIsNotInteger": "Value in [{tableName}.{columnKey}] is not an integer.",
                     "themeCannotBeActivated": "{themeName} cannot be activated because it is not currently installed.",
-                    "validationFailed": "Validation ({validationName}) failed for {key}"
+                    "validationFailed": "Validation ({validationName}) failed for {key}",
+                    "validationFailedTypes": {
+                        "isLength": "Value in [{tableName}.{key}] exceeds maximum length of {max} characters."
+                    }
                 }
             }
         }
