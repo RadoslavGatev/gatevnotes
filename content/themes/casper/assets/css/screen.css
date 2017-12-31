@@ -165,6 +165,7 @@ body {
 
 .site-logo {
     max-height: 45px;
+    width: 190px;
 }
 
 .site-description {
@@ -1473,7 +1474,8 @@ Usage (In Ghost editor):
 }
 
 .floating-header-share-tw,
-.floating-header-share-fb {
+.floating-header-share-fb,
+.floating-header-share-linkedin {
     display: block;
     align-items: center;
     width: 60px;
@@ -1490,6 +1492,10 @@ Usage (In Ghost editor):
 
 .floating-header-share-fb {
     background: #005e99;
+}
+
+.floating-header-share-linkedin {
+    background: #0077B5;    
 }
 
 .progress {
@@ -1544,7 +1550,8 @@ Usage (In Ghost editor):
         font-size: 1.5rem;
     }
     .floating-header-share-tw,
-    .floating-header-share-fb {
+    .floating-header-share-fb,
+    .floating-header-share-linkedin {
         width: 40px;
         height: 40px;
         line-height: 38px;
