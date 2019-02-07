@@ -1,3 +1,4 @@
 node_env: production
 loggingEnabled: true
 enableXFF: true
+npm_config_arch: x64
