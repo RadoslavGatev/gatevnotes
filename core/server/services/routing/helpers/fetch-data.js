@@ -2,28 +2,31 @@
  * # Fetch Data
  * Dynamically build and execute queries on the API
  */
-const _ = require('lodash'),
-    Promise = require('bluebird'),
-    api = require('../../../api'),
-    defaultPostQuery = {};
+const _ = require('lodash');
+const Promise = require('bluebird');
 
 // The default settings for a default post query
 const queryDefaults = {
     type: 'browse',
     resource: 'posts',
+    controller: 'posts',
     options: {}
 };
 
 /**
- * Default post query needs to always include author, authors & tags
- *
  * @deprecated: `author`, will be removed in Ghost 3.0
  */
-_.extend(defaultPostQuery, queryDefaults, {
+const defaultQueryOptions = {
     options: {
         include: 'author,authors,tags'
     }
-});
+};
+
+/**
+ * Default post query needs to always include author, authors & tags
+ */
+const defaultPostQuery = _.cloneDeep(queryDefaults);
+defaultPostQuery.options = defaultQueryOptions.options;
 
 /**
  * ## Process Query
@@ -35,10 +38,11 @@ _.extend(defaultPostQuery, queryDefaults, {
  * @param {String} slugParam
  * @returns {Promise} promise for an API call
  */
-function processQuery(query, slugParam) {
+function processQuery(query, slugParam, locals) {
+    const api = require('../../../api')[locals.apiVersion];
+
     query = _.cloneDeep(query);
 
-    // Ensure that all the properties are filled out
     _.defaultsDeep(query, queryDefaults);
 
     // Replace any slugs, see TaxonomyRouter. We replace any '%s' by the slug
@@ -47,7 +51,7 @@ function processQuery(query, slugParam) {
     });
 
     // Return a promise for the api query
-    return api[query.resource][query.type](query.options);
+    return api[query.controller][query.type](query.options);
 }
 
 /**
@@ -56,7 +60,7 @@ function processQuery(query, slugParam) {
  * Wraps the queries using Promise.props to ensure it gets named responses
  * Does a first round of formatting on the response, and returns
  */
-function fetchData(pathOptions, routerOptions) {
+function fetchData(pathOptions, routerOptions, locals) {
     pathOptions = pathOptions || {};
     routerOptions = routerOptions || {};
 
@@ -81,11 +85,11 @@ function fetchData(pathOptions, routerOptions) {
 
     // CASE: always fetch post entries
     // The filter can in theory contain a "%s" e.g. filter="primary_tag:%s"
-    props.posts = processQuery(postQuery, pathOptions.slug);
+    props.posts = processQuery(postQuery, pathOptions.slug, locals);
 
     // CASE: fetch more data defined by the router e.g. tags, authors - see TaxonomyRouter
     _.each(routerOptions.data, function (query, name) {
-        props[name] = processQuery(query, pathOptions.slug);
+        props[name] = processQuery(query, pathOptions.slug, locals);
     });
 
     return Promise.props(props)

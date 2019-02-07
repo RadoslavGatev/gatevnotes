@@ -1,4 +1,5 @@
 const ghostBookshelf = require('./base');
+
 let Tag, Tags;
 
 Tag = ghostBookshelf.Model.extend({
@@ -17,14 +18,20 @@ Tag = ghostBookshelf.Model.extend({
     },
 
     onCreated: function onCreated(model, attrs, options) {
+        ghostBookshelf.Model.prototype.onCreated.apply(this, arguments);
+
         model.emitChange('added', options);
     },
 
     onUpdated: function onUpdated(model, attrs, options) {
+        ghostBookshelf.Model.prototype.onUpdated.apply(this, arguments);
+
         model.emitChange('edited', options);
     },
 
     onDestroyed: function onDestroyed(model, options) {
+        ghostBookshelf.Model.prototype.onDestroyed.apply(this, arguments);
+
         model.emitChange('deleted', options);
     },
 
@@ -48,13 +55,6 @@ Tag = ghostBookshelf.Model.extend({
         }
     },
 
-    emptyStringProperties: function emptyStringProperties() {
-        // CASE: the client might send empty image properties with "" instead of setting them to null.
-        // This can cause GQL to fail. We therefore enforce 'null' for empty image properties.
-        // See https://github.com/TryGhost/GQL/issues/24
-        return ['feature_image'];
-    },
-
     posts: function posts() {
         return this.belongsToMany('Post');
     },
@@ -63,6 +63,7 @@ Tag = ghostBookshelf.Model.extend({
         var options = Tag.filterOptions(unfilteredOptions, 'toJSON'),
             attrs = ghostBookshelf.Model.prototype.toJSON.call(this, options);
 
+        // @NOTE: this serialization should be moved into api layer, it's not being moved as it's not used
         attrs.parent = attrs.parent || attrs.parent_id;
         delete attrs.parent_id;
 
@@ -73,20 +74,12 @@ Tag = ghostBookshelf.Model.extend({
         return {};
     },
 
-    /**
-     * @deprecated in favour of filter
-     */
-    processOptions: function processOptions(options) {
-        return options;
-    },
-
     permittedOptions: function permittedOptions(methodName) {
-        var options = ghostBookshelf.Model.permittedOptions(),
+        var options = ghostBookshelf.Model.permittedOptions.call(this, methodName),
 
             // whitelists for the `options` hash argument on methods, by method name.
             // these are the only options that can be passed to Bookshelf / Knex.
             validOptions = {
-                findPage: ['page', 'limit', 'columns', 'filter', 'order'],
                 findAll: ['columns'],
                 findOne: ['visibility'],
                 destroy: ['destroyAll']

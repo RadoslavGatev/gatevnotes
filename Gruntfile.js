@@ -76,7 +76,13 @@ var config = require('./core/server/config'),
                     }
                 },
                 express: {
-                    files: ['core/ghost-server.js', 'core/server/**/*.js', 'config.*.json', '!config.testing.json'],
+                    files: [
+                        'core/ghost-server.js',
+                        'core/server/**/*.js',
+                        '!core/server/lib/members/static/auth/**/*.js',
+                        'config.*.json',
+                        '!config.testing.json'
+                    ],
                     tasks: ['express:dev'],
                     options: {
                         spawn: false,
@@ -116,7 +122,8 @@ var config = require('./core/server/config'),
                         'core/*.js',
                         'core/server/*.js',
                         'core/server/**/*.js',
-                        '!core/server/public/**/*.js'
+                        '!core/server/public/**/*.js',
+                        '!core/server/lib/members/static/auth/**/*.js'
                     ]
                 },
                 test: {
@@ -132,8 +139,6 @@ var config = require('./core/server/config'),
             },
 
             // ### grunt-mocha-cli
-            // Configuration for the mocha test runner, used to run unit, integration and route tests as part of
-            // `grunt validate`. See [grunt validate](#validate) and its sub tasks for more information.
             mochacli: {
                 options: {
                     ui: 'bdd',
@@ -144,31 +149,21 @@ var config = require('./core/server/config'),
                     exit: true
                 },
 
-                // #### All Unit tests
                 unit: {
                     src: [
                         'core/test/unit/**/*_spec.js'
                     ]
                 },
 
-                // #### All Integration tests
-                integration: {
+                acceptance: {
                     src: [
-                        'core/test/integration/**/*_spec.js'
+                        'core/test/acceptance/**/*_spec.js'
                     ]
                 },
 
-                // #### All Route tests
-                routes: {
+                regression: {
                     src: [
-                        'core/test/functional/routes/**/*_spec.js'
-                    ]
-                },
-
-                // #### All Module tests
-                module: {
-                    src: [
-                        'core/test/functional/module/**/*_spec.js'
+                        'core/test/regression/**/*_spec.js'
                     ]
                 },
 
@@ -194,8 +189,8 @@ var config = require('./core/server/config'),
                 },
                 coverage_all: {
                     src: [
-                        'core/test/integration',
-                        'core/test/functional',
+                        'core/test/acceptance',
+                        'core/test/regression',
                         'core/test/unit'
                     ],
                     options: {
@@ -250,25 +245,6 @@ var config = require('./core/server/config'),
                         return 'git checkout master; git pull ' + upstream + ' master; ' +
                             'yarn; git submodule foreach "git checkout master && git pull ' +
                             upstream + ' master"';
-                    }
-                },
-
-                dbhealth: {
-                    command: 'knex-migrator health'
-                }
-            },
-
-            // ### grunt-docker
-            // Generate documentation from code
-            docker: {
-                docs: {
-                    dest: 'docs',
-                    src: ['.'],
-                    options: {
-                        onlyUpdated: true,
-                        exclude: 'node_modules,bower_components,content,core/client,*test,*doc*,' +
-                        '*vendor,config.*.json,*buil*,.dist*,.idea,.git*,.travis.yml,.bower*,.editorconfig,.js*,*.md,' +
-                        'MigratorConfig.js'
                     }
                 }
             },
@@ -353,7 +329,8 @@ var config = require('./core/server/config'),
                         npmInstall: true
                     },
                     projects: {
-                        'core/client': 'init'
+                        'core/client': 'init',
+                        'core/server/lib/members/static/auth': 'init'
                     }
                 },
 
@@ -362,12 +339,14 @@ var config = require('./core/server/config'),
                 },
 
                 prod: {
-                    'core/client': 'shell:ember:prod'
+                    'core/client': 'shell:ember:prod',
+                    'core/server/lib/members/static/auth': 'shell:preact:prod'
                 },
 
                 watch: {
                     projects: {
-                        'core/client': ['shell:ember:watch', '--live-reload-base-url="' + urlService.utils.getSubdir() + '/ghost/"']
+                        'core/client': ['shell:ember:watch', '--live-reload-base-url="' + urlService.utils.getSubdir() + '/ghost/"'],
+                        'core/server/lib/members/static/auth': ['shell:preact:dev']
                     }
                 }
             },
@@ -460,8 +439,7 @@ var config = require('./core/server/config'),
         // It works for any path relative to the core/test folder. It will also run all the tests in a single directory
         // You can also run a test with grunt test:core/test/unit/... to get bash autocompletion
         //
-        // `grunt test:integration/api` - runs the api integration tests
-        // `grunt test:integration` - runs the integration tests in the root folder and excludes all api & model tests
+        // `grunt test:regression/api` - runs the api regression tests
         grunt.registerTask('test', 'Run a particular spec file from the core/test directory e.g. `grunt test:unit/apps_spec.js`', function (test) {
             if (!test) {
                 grunt.fail.fatal('No test provided. `grunt test` expects a filename. e.g.: `grunt test:unit/apps_spec.js`. Did you mean `npm test` or `grunt validate`?');
@@ -510,16 +488,11 @@ var config = require('./core/server/config'),
                 return grunt.task.run(['lint']);
             }
 
-            grunt.task.run(['test-all']);
+            grunt.task.run(['test-acceptance', 'test-unit']);
         });
 
-        // ### Test-All
-        // **Main testing task**
-        //
-        // `grunt test-all` will lint and test your pre-built local Ghost codebase.
-        //
         grunt.registerTask('test-all', 'Run all server tests',
-            ['test-routes', 'test-module', 'test-unit', 'test-integration']);
+            ['test-acceptance', 'test-unit', 'test-regression']);
 
         // ### Lint
         //
@@ -553,79 +526,21 @@ var config = require('./core/server/config'),
             ['test-setup', 'mochacli:unit']
         );
 
-        // ### Integration tests *(sub task)*
-        // `grunt test-integration` will run just the integration tests
-        //
-        // Provided you already have a `config.*.json` file, you can run just the model integration tests by running:
-        //
-        // `grunt test:integration/model`
-        //
-        // Or just the api integration tests by running:
-        //
-        // `grunt test:integration/api`
-        //
-        // Integration tests are run with [mocha](http://mochajs.org/) using
-        // [should](https://github.com/visionmedia/should.js) to describe the tests in a highly readable style.
-        // Integration tests are different to the unit tests because they make requests to the database.
-        //
-        // If you need to run an individual integration test file you can use the `grunt test:<file_path>` task:
-        //
-        // `grunt test:integration/api/api_tags_spec.js`
-        //
-        // Their purpose is to test that both the api and models behave as expected when the database layer is involved.
-        // These tests are run against sqlite3 and mysql on travis and ensure that differences between the databases
-        // don't cause bugs.
-        //
-        // A coverage report can be generated for these tests using the `grunt test-coverage` task.
-        grunt.registerTask('test-integration', 'Run integration tests (mocha + db access)',
-            ['test-setup', 'mochacli:integration']
+        grunt.registerTask('test-regression', 'Run regression tests.',
+            ['test-setup', 'mochacli:regression']
         );
 
-        // ### Route tests *(sub task)*
-        // `grunt test-routes` will run just the route tests
-        //
-        // If you need to run an individual route test file, you can use the `grunt test:<file_path>` task:
-        //
-        // `grunt test:functional/routes/admin_spec.js`
-        //
-        // Route tests are run with [mocha](http://mochajs.org/) using
-        // [should](https://github.com/visionmedia/should.js) and [supertest](https://github.com/visionmedia/supertest)
-        // to describe and create the tests.
-        //
-        // Supertest enables us to describe requests that we want to make, and also describe the response we expect to
-        // receive back. It works directly with express, so we don't have to run a server to run the tests.
-        //
-        // The purpose of the route tests is to ensure that all of the routes (pages, and API requests) in Ghost
-        // are working as expected, including checking the headers and status codes received. It is very easy and
-        // quick to test many permutations of routes / urls in the system.
-        grunt.registerTask('test-routes', 'Run functional route tests (mocha)',
-            ['test-setup', 'mochacli:routes']
-        );
-
-        // ### Module tests *(sub task)*
-        // `grunt test-module` will run just the module tests
-        //
-        // The purpose of the module tests is to ensure that Ghost can be used as an npm module and exposes all
-        // required methods to interact with it.
-        grunt.registerTask('test-module', 'Run functional module tests (mocha)',
-            ['test-setup', 'mochacli:module']
+        grunt.registerTask('test-acceptance', 'Run acceptance tests',
+            ['test-setup', 'mochacli:acceptance']
         );
 
         // ### Coverage
-        // `grunt coverage` will generate a report for the Unit Tests.
-        //
-        // This is not currently done as part of CI or any build, but is a tool we have available to keep an eye on how
-        // well the unit and integration tests are covering the code base.
-        // Ghost does not have a minimum coverage level - we're more interested in ensuring important and useful areas
-        // of the codebase are covered, than that the whole codebase is covered to a particular level.
-        //
-        // Key areas for coverage are: helpers and theme elements, apps / GDK, the api and model layers.
-
-        grunt.registerTask('coverage', 'Generate unit and integration (mocha) tests coverage report',
+        // `grunt coverage` will generate a report for the code coverage.
+        grunt.registerTask('coverage', 'Generate unit tests coverage report',
             ['test-setup', 'mocha_istanbul:coverage']
         );
 
-        grunt.registerTask('coverage-all', 'Generate unit and integration tests coverage report',
+        grunt.registerTask('coverage-all', 'Generate full coverage report',
             ['test-setup', 'mocha_istanbul:coverage_all']
         );
 
@@ -726,7 +641,7 @@ var config = require('./core/server/config'),
         // `grunt master` [`upstream` is the default upstream to pull from]
         // `grunt master --upstream=parent`
         grunt.registerTask('master', 'Update your current working folder to latest master.',
-            ['shell:master', 'subgrunt:init', 'shell:dbhealth']
+            ['shell:master', 'subgrunt:init']
         );
 
         // ### Release

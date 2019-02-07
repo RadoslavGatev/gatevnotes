@@ -1,14 +1,24 @@
 const _ = require('lodash'),
     Promise = require('bluebird'),
     debug = require('ghost-ignition').debug('services:routing:controllers:static'),
-    api = require('../../../api'),
     helpers = require('../helpers');
 
-function processQuery(query) {
+function processQuery(query, locals) {
+    const api = require('../../../api')[locals.apiVersion];
     query = _.cloneDeep(query);
 
+    // CASE: If you define a single data key for a static route (e.g. data: page.team), this static route will represent
+    //       the target resource. That means this static route has to behave the same way than the original resource url.
+    //       e.g. the meta data package needs access to the full resource including relations.
+    //       We override the `include` property for now, because the full data set is required anyway.
+    if (_.get(query, 'resource') === 'posts') {
+        _.extend(query.options, {
+            include: 'author,authors,tags'
+        });
+    }
+
     // Return a promise for the api query
-    return api[query.resource][query.type](query.options);
+    return api[query.controller][query.type](query.options);
 }
 
 module.exports = function staticController(req, res, next) {
@@ -17,7 +27,7 @@ module.exports = function staticController(req, res, next) {
     let props = {};
 
     _.each(res.routerOptions.data, function (query, name) {
-        props[name] = processQuery(query);
+        props[name] = processQuery(query, res.locals);
     });
 
     return Promise.props(props)
