@@ -50,6 +50,8 @@ into the {body} of the default.hbs template --}}
                     {{content}}
                 </div>
             </section>
+            
+            {{> "donation"}}
 
             {{!-- Email subscribe form at the bottom of the page --}}
             {{#if @labs.subscribers}}

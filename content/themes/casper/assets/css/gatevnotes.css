@@ -1,0 +1,42 @@
+.site-logo {
+    width: 190px;
+}
+
+.floating-header-share-linkedin {
+    display: block;
+    align-items: center;
+    width: 60px;
+    height: 60px;
+    color: #fff;
+    line-height: 48px;
+    text-align: center;
+    transition: all 500ms cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.floating-header-share-linkedin {
+    background: #0077B5;    
+}
+
+.donation-text {
+    margin: 1.5em 0;
+    padding: 2vw 7vw 2.7vw;
+    border: 1px solid #f7f5f6;
+    text-align: center;
+    background: #eeeaed;
+    border-radius: 7px;
+}
+.donation-text p {
+    margin-bottom: 0.9em;
+    font-size: 2.2rem;
+    letter-spacing: .2px;
+    text-decoration: underline dashed;
+}
+
+
+@media (max-width: 900px) {
+    .floating-header-share-linkedin {
+        width: 40px;
+        height: 40px;
+        line-height: 38px;
+    }
+}
