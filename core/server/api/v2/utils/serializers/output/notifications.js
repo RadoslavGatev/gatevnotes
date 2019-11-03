@@ -2,6 +2,7 @@ const debug = require('ghost-ignition').debug('api:v2:utils:serializers:output:n
 
 module.exports = {
     all(response, apiConfig, frame) {
+        debug('all');
         if (!response) {
             return;
         }
@@ -16,13 +17,12 @@ module.exports = {
 
         response.forEach((notification) => {
             delete notification.seen;
+            delete notification.seenBy;
             delete notification.addedAt;
         });
 
         frame.response = {
             notifications: response
         };
-
-        debug(frame.response);
     }
 };

@@ -1,8 +1,7 @@
 const cors = require('cors');
 const url = require('url');
 const os = require('os');
-const some = require('lodash/some');
-const urlService = require('../../../../services/url');
+const urlUtils = require('../../../../lib/url-utils');
 
 let whitelist = [];
 const ENABLE_CORS = {origin: true, maxAge: 86400};
@@ -33,8 +32,8 @@ function getIPs() {
 }
 
 function getUrls() {
-    const blogHost = url.parse(urlService.utils.urlFor('home', true)).hostname;
-    const adminHost = url.parse(urlService.utils.urlFor('admin', true)).hostname;
+    const blogHost = url.parse(urlUtils.urlFor('home', true)).hostname;
+    const adminHost = url.parse(urlUtils.urlFor('admin', true)).hostname;
     const urls = [];
 
     urls.push(blogHost);
@@ -66,16 +65,10 @@ function getWhitelist() {
  */
 function handleCORS(req, cb) {
     const origin = req.get('origin');
-    const trustedDomains = req.client && req.client.trustedDomains;
 
     // Request must have an Origin header
     if (!origin) {
         return cb(null, DISABLE_CORS);
-    }
-
-    // Origin matches a client_trusted_domain
-    if (some(trustedDomains, {trusted_domain: origin})) {
-        return cb(null, ENABLE_CORS);
     }
 
     // Origin matches whitelist

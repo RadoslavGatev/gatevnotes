@@ -10,16 +10,12 @@ module.exports = {
     get session() {
         return require('./session');
     },
-    /*
-     * TODO: Get rid of these when v0.1 is gone
-     */
-    get init() {
-        return (options) => {
-            require('./oauth').init(options);
-            return require('./passport').init(options);
-        };
+
+    get setup() {
+        return require('./setup');
     },
-    get oauth() {
-        return require('./oauth');
+
+    get passwordreset() {
+        return require('./passwordreset');
     }
 };

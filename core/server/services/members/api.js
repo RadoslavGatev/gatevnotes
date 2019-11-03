@@ -1,37 +1,98 @@
-const url = require('url');
+const crypto = require('crypto');
+const {URL} = require('url');
 const settingsCache = require('../settings/cache');
-const config = require('../../config');
-const MembersApi = require('../../lib/members');
-const models = require('../../models');
+const urlUtils = require('../../lib/url-utils');
+const MembersApi = require('@tryghost/members-api');
+const common = require('../../lib/common');
+const ghostVersion = require('../../lib/ghost-version');
 const mail = require('../mail');
+const models = require('../../models');
+const signinEmail = require('./emails/signin');
+const signupEmail = require('./emails/signup');
+const subscribeEmail = require('./emails/subscribe');
 
-function createMember({name, email, password}) {
-    return models.Member.add({
-        name,
+async function createMember({email, name, note}, options = {}) {
+    const model = await models.Member.add({
         email,
-        password
-    }).then((member) => {
-        return member.toJSON();
+        name: name || null,
+        note: note || null
     });
+    const member = model.toJSON(options);
+    return member;
 }
 
-function updateMember(member, newData) {
-    return models.Member.findOne(member, {
-        require: true
-    }).then(({id}) => {
-        return models.Member.edit(newData, {id});
-    }).then((member) => {
-        return member.toJSON();
-    });
+async function getMember(data, options = {}) {
+    if (!data.email && !data.id) {
+        return Promise.resolve(null);
+    }
+    const model = await models.Member.findOne(data, options);
+    if (!model) {
+        return null;
+    }
+    const member = model.toJSON(options);
+    return member;
 }
 
-function getMember(data, options) {
+async function setMetadata(module, metadata) {
+    if (module !== 'stripe') {
+        return;
+    }
+
+    if (metadata.customer) {
+        await models.MemberStripeCustomer.upsert(metadata.customer, {
+            customer_id: metadata.customer.customer_id
+        });
+    }
+
+    if (metadata.subscription) {
+        await models.StripeCustomerSubscription.upsert(metadata.subscription, {
+            subscription_id: metadata.subscription.subscription_id
+        });
+    }
+
+    return;
+}
+
+async function getMetadata(module, member) {
+    if (module !== 'stripe') {
+        return;
+    }
+
+    const customers = (await models.MemberStripeCustomer.findAll({
+        filter: `member_id:${member.id}`
+    })).toJSON();
+
+    const subscriptions = await customers.reduce(async (subscriptionsPromise, customer) => {
+        const customerSubscriptions = await models.StripeCustomerSubscription.findAll({
+            filter: `customer_id:${customer.customer_id}`
+        });
+        return (await subscriptionsPromise).concat(customerSubscriptions.toJSON());
+    }, []);
+
+    return {
+        customers: customers,
+        subscriptions: subscriptions
+    };
+}
+
+async function updateMember({name, note}, options = {}) {
+    const model = await models.Member.edit({
+        name: name || null,
+        note: note || null
+    }, options);
+
+    const member = model.toJSON(options);
+    return member;
+}
+
+function deleteMember(options) {
     options = options || {};
-    return models.Member.findOne(data, options).then((model) => {
-        if (!model) {
-            return null;
-        }
-        return model.toJSON(options);
+    return models.Member.destroy(options).catch(models.Member.NotFoundError, () => {
+        throw new common.errors.NotFoundError({
+            message: common.i18n.t('errors.api.resource.resourceNotFound', {
+                resource: 'Member'
+            })
+        });
     });
 }
 
@@ -44,87 +105,220 @@ function listMembers(options) {
     });
 }
 
-function validateMember({email, password}) {
-    return models.Member.findOne({email}, {
-        require: true
-    }).then((member) => {
-        return member.comparePassword(password).then((res) => {
-            if (!res) {
-                throw new Error('Password is incorrect');
-            }
-            return member;
-        });
-    }).then((member) => {
-        return member.toJSON();
-    });
-}
+const getApiUrl = ({version, type}) => {
+    const {href} = new URL(
+        urlUtils.getApiPath({version, type}),
+        urlUtils.urlFor('admin', true)
+    );
+    return href;
+};
 
-// @TODO this should check some config/settings and return Promise.reject by default
-function validateAudience({audience, origin}) {
-    if (audience === origin) {
-        return Promise.resolve();
+const siteUrl = urlUtils.getSiteUrl();
+const membersApiUrl = getApiUrl({version: 'v3', type: 'members'});
+
+const ghostMailer = new mail.GhostMailer();
+
+function getStripePaymentConfig() {
+    const subscriptionSettings = settingsCache.get('members_subscription_settings');
+
+    const stripePaymentProcessor = subscriptionSettings.paymentProcessors.find(
+        paymentProcessor => paymentProcessor.adapter === 'stripe'
+    );
+
+    if (!stripePaymentProcessor || !stripePaymentProcessor.config) {
+        return null;
     }
-    return Promise.resolve();
-}
 
-const publicKey = settingsCache.get('members_public_key');
-const privateKey = settingsCache.get('members_private_key');
-const sessionSecret = settingsCache.get('members_session_secret');
-const passwordResetUrl = config.get('url');
-const {protocol, host} = url.parse(config.get('url'));
-const siteOrigin = `${protocol}//${host}`;
-const issuer = siteOrigin;
-const ssoOrigin = siteOrigin;
-let mailer;
-
-const membersConfig = config.get('members');
-
-function sendEmail(member, {token}) {
-    if (!(mailer instanceof mail.GhostMailer)) {
-        mailer = new mail.GhostMailer();
+    if (!stripePaymentProcessor.config.public_token || !stripePaymentProcessor.config.secret_token) {
+        return null;
     }
-    const message = {
-        to: member.email,
-        subject: 'Reset password',
-        html: `
-        Hi ${member.name},
 
-        To reset your password, click the following link and follow the instructions:
+    const webhookHandlerUrl = new URL('/members/webhooks/stripe', siteUrl);
 
-        ${passwordResetUrl}#reset-password?token=${token}
+    const checkoutSuccessUrl = new URL(siteUrl);
+    checkoutSuccessUrl.searchParams.set('stripe', 'success');
+    const checkoutCancelUrl = new URL(siteUrl);
+    checkoutCancelUrl.searchParams.set('stripe', 'cancel');
 
-        If you didn't request a password change, just ignore this email.
-        `
+    return {
+        publicKey: stripePaymentProcessor.config.public_token,
+        secretKey: stripePaymentProcessor.config.secret_token,
+        checkoutSuccessUrl: checkoutSuccessUrl.href,
+        checkoutCancelUrl: checkoutCancelUrl.href,
+        webhookHandlerUrl: webhookHandlerUrl.href,
+        product: stripePaymentProcessor.config.product,
+        plans: stripePaymentProcessor.config.plans,
+        appInfo: {
+            name: 'Ghost',
+            partner_id: 'pp_partner_DKmRVtTs4j9pwZ',
+            version: ghostVersion.original,
+            url: 'https://ghost.org/'
+        }
     };
-
-    /* eslint-disable */
-    // @TODO remove this
-    console.log(message.html);
-    /* eslint-enable */
-    return mailer.send(message).catch((err) => {
-        return Promise.reject(err);
-    });
 }
 
-const api = MembersApi({
-    authConfig: {
-        issuer,
-        publicKey,
-        privateKey,
-        sessionSecret,
-        ssoOrigin
-    },
-    paymentConfig: {
-        processors: membersConfig.paymentProcessors
-    },
-    validateAudience,
-    createMember,
-    getMember,
-    listMembers,
-    validateMember,
-    updateMember,
-    sendEmail
-});
+function getAuthSecret() {
+    const hexSecret = settingsCache.get('members_email_auth_secret');
+    if (!hexSecret) {
+        common.logging.warn('Could not find members_email_auth_secret, using dynamically generated secret');
+        return crypto.randomBytes(64);
+    }
+    const secret = Buffer.from(hexSecret, 'hex');
+    if (secret.length < 64) {
+        common.logging.warn('members_email_auth_secret not large enough (64 bytes), using dynamically generated secret');
+        return crypto.randomBytes(64);
+    }
+    return secret;
+}
 
-module.exports = api;
-module.exports.publicKey = publicKey;
+function getAllowSelfSignup() {
+    const subscriptionSettings = settingsCache.get('members_subscription_settings');
+    return subscriptionSettings.allowSelfSignup;
+}
+
+// NOTE: the function is an exact duplicate of one in GhostMailer should be extracted
+//       into a common lib once it needs to be reused anywhere else again
+function getDomain() {
+    const domain = urlUtils.urlFor('home', true).match(new RegExp('^https?://([^/:?#]+)(?:[/:?#]|$)', 'i'));
+    return domain && domain[1];
+}
+
+module.exports = createApiInstance;
+
+function createApiInstance() {
+    const membersApiInstance = MembersApi({
+        tokenConfig: {
+            issuer: membersApiUrl,
+            publicKey: settingsCache.get('members_public_key'),
+            privateKey: settingsCache.get('members_private_key')
+        },
+        auth: {
+            getSigninURL(token, type) {
+                const signinURL = new URL(siteUrl);
+                signinURL.searchParams.set('token', token);
+                signinURL.searchParams.set('action', type);
+                return signinURL.href;
+            },
+            allowSelfSignup: getAllowSelfSignup(),
+            secret: getAuthSecret()
+        },
+        mail: {
+            transporter: {
+                sendMail(message) {
+                    if (process.env.NODE_ENV !== 'production') {
+                        common.logging.warn(message.text);
+                    }
+                    let msg = Object.assign({
+                        subject: 'Signin',
+                        forceTextContent: true
+                    }, message);
+                    const subscriptionSettings = settingsCache.get('members_subscription_settings');
+
+                    if (subscriptionSettings && subscriptionSettings.fromAddress) {
+                        let from = `${subscriptionSettings.fromAddress}@${getDomain()}`;
+                        msg = Object.assign({from: from}, msg);
+                    }
+
+                    return ghostMailer.send(msg);
+                }
+            },
+            getSubject(type) {
+                const siteTitle = settingsCache.get('title');
+                switch (type) {
+                case 'subscribe':
+                    return `📫 Confirm your subscription to ${siteTitle}`;
+                case 'signup':
+                    return `🙌 Complete your sign up to ${siteTitle}!`;
+                case 'signin':
+                default:
+                    return `🔑 Secure sign in link for ${siteTitle}`;
+                }
+            },
+            getText(url, type, email) {
+                const siteTitle = settingsCache.get('title');
+                switch (type) {
+                case 'subscribe':
+                    return `
+                        Hey there,
+
+                        You're one tap away from subscribing to ${siteTitle} — please confirm your email address with this link:
+
+                        ${url}
+
+                        For your security, the link will expire in 10 minutes time.
+
+                        All the best!
+                        The team at ${siteTitle}
+
+                        ---
+
+                        Sent to ${email}
+                        If you did not make this request, you can simply delete this message. You will not be subscribed.
+                        `;
+                case 'signup':
+                    return `
+                        Hey there!
+
+                        Thanks for signing up for ${siteTitle} — use this link to complete the sign up process and be automatically signed in:
+
+                        ${url}
+
+                        For your security, the link will expire in 10 minutes time.
+
+                        See you soon!
+                        The team at ${siteTitle}
+
+                        ---
+
+                        Sent to ${email}
+                        If you did not make this request, you can simply delete this message. You will not be signed up, and no account will be created for you.
+                        `;
+                case 'signin':
+                default:
+                    return `
+                        Hey there,
+
+                        Welcome back! Use this link to securely sign in to your ${siteTitle} account:
+
+                        ${url}
+
+                        For your security, the link will expire in 10 minutes time.
+
+                        See you soon!
+                        The team at ${siteTitle}
+
+                        ---
+
+                        Sent to ${email}
+                        If you did not make this request, you can safely ignore this email.
+                        `;
+                }
+            },
+            getHTML(url, type, email) {
+                const siteTitle = settingsCache.get('title');
+                switch (type) {
+                case 'subscribe':
+                    return subscribeEmail({url, email, siteTitle});
+                case 'signup':
+                    return signupEmail({url, email, siteTitle});
+                case 'signin':
+                default:
+                    return signinEmail({url, email, siteTitle});
+                }
+            }
+        },
+        paymentConfig: {
+            stripe: getStripePaymentConfig()
+        },
+        setMetadata,
+        getMetadata,
+        createMember,
+        updateMember,
+        getMember,
+        deleteMember,
+        listMembers,
+        logger: common.logging
+    });
+
+    return membersApiInstance;
+}

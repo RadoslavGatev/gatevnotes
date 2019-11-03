@@ -1,64 +1,97 @@
 const _ = require('lodash');
-const urlService = require('../../../../../../services/url');
+const urlService = require('../../../../../../../frontend/services/url');
+const urlUtils = require('../../../../../../lib/url-utils');
+const localUtils = require('../../../index');
 
-const forPost = (id, attrs, options) => {
+const forPost = (id, attrs, frame) => {
     attrs.url = urlService.getUrlByResourceId(id, {absolute: true});
 
-    if (attrs.feature_image) {
-        attrs.feature_image = urlService.utils.urlFor('image', {image: attrs.feature_image}, true);
-    }
-
-    if (attrs.og_image) {
-        attrs.og_image = urlService.utils.urlFor('image', {image: attrs.og_image}, true);
-    }
-
-    if (attrs.twitter_image) {
-        attrs.twitter_image = urlService.utils.urlFor('image', {image: attrs.twitter_image}, true);
-    }
-
-    if (attrs.html) {
-        const urlOptions = {
-            assetsOnly: true
-        };
-
-        if (options.absolute_urls) {
-            urlOptions.assetsOnly = false;
+    /**
+     * CASE: admin api should serve preview urls
+     *
+     * @NOTE
+     * The url service has no clue of the draft/scheduled concept. It only generates urls for published resources.
+     * Adding a hardcoded fallback into the url service feels wrong IMO.
+     *
+     * Imagine the site won't be part of core and core does not serve urls anymore.
+     * Core needs to offer a preview API, which returns draft posts.
+     * That means the url is no longer /p/:uuid, it's e.g. GET /api/v2/content/preview/:uuid/.
+     * /p/ is a concept of the site, not of core.
+     *
+     * The site is not aware of existing drafts. It won't be able to get the uuid.
+     *
+     * Needs further discussion.
+     */
+    if (!localUtils.isContentAPI(frame)) {
+        if (attrs.status !== 'published' && attrs.url.match(/\/404\//)) {
+            attrs.url = urlUtils.urlFor({
+                relativeUrl: urlUtils.urlJoin('/p', attrs.uuid, '/')
+            }, null, true);
         }
+    }
 
-        attrs.html = urlService.utils.makeAbsoluteUrls(
-            attrs.html,
-            urlService.utils.urlFor('home', true),
+    const urlOptions = {};
+
+    // v2 only transforms asset URLS, v3 will transform all urls so that
+    // input/output transformations are balanced and all URLs are absolute
+    if (!frame.options.absolute_urls) {
+        urlOptions.assetsOnly = true;
+    }
+
+    if (attrs.mobiledoc) {
+        attrs.mobiledoc = urlUtils.mobiledocRelativeToAbsolute(
+            attrs.mobiledoc,
             attrs.url,
             urlOptions
-        ).html();
+        );
     }
 
-    if (options.columns && !options.columns.includes('url')) {
+    ['html', 'codeinjection_head', 'codeinjection_foot'].forEach((attr) => {
+        if (attrs[attr]) {
+            attrs[attr] = urlUtils.htmlRelativeToAbsolute(
+                attrs[attr],
+                attrs.url,
+                urlOptions
+            );
+        }
+    });
+
+    ['feature_image', 'og_image', 'twitter_image', 'canonical_url'].forEach((attr) => {
+        if (attrs[attr]) {
+            attrs[attr] = urlUtils.relativeToAbsolute(attrs[attr], attrs.url, urlOptions);
+        }
+    });
+
+    if (frame.options.columns && !frame.options.columns.includes('url')) {
         delete attrs.url;
     }
 
     return attrs;
 };
 
-const forUser = (id, attrs) => {
-    attrs.url = urlService.getUrlByResourceId(id, {absolute: true});
+const forUser = (id, attrs, options) => {
+    if (!options.columns || (options.columns && options.columns.includes('url'))) {
+        attrs.url = urlService.getUrlByResourceId(id, {absolute: true});
+    }
 
     if (attrs.profile_image) {
-        attrs.profile_image = urlService.utils.urlFor('image', {image: attrs.profile_image}, true);
+        attrs.profile_image = urlUtils.urlFor('image', {image: attrs.profile_image}, true);
     }
 
     if (attrs.cover_image) {
-        attrs.cover_image = urlService.utils.urlFor('image', {image: attrs.cover_image}, true);
+        attrs.cover_image = urlUtils.urlFor('image', {image: attrs.cover_image}, true);
     }
 
     return attrs;
 };
 
-const forTag = (id, attrs) => {
-    attrs.url = urlService.getUrlByResourceId(id, {absolute: true});
+const forTag = (id, attrs, options) => {
+    if (!options.columns || (options.columns && options.columns.includes('url'))) {
+        attrs.url = urlService.getUrlByResourceId(id, {absolute: true});
+    }
 
     if (attrs.feature_image) {
-        attrs.feature_image = urlService.utils.urlFor('image', {image: attrs.feature_image}, true);
+        attrs.feature_image = urlUtils.urlFor('image', {image: attrs.feature_image}, true);
     }
 
     return attrs;
@@ -70,20 +103,20 @@ const forSettings = (attrs) => {
     if (_.isArray(attrs)) {
         attrs.forEach((obj) => {
             if (['cover_image', 'logo', 'icon'].includes(obj.key) && obj.value) {
-                obj.value = urlService.utils.urlFor('image', {image: obj.value}, true);
+                obj.value = urlUtils.urlFor('image', {image: obj.value}, true);
             }
         });
     } else {
         if (attrs.cover_image) {
-            attrs.cover_image = urlService.utils.urlFor('image', {image: attrs.cover_image}, true);
+            attrs.cover_image = urlUtils.urlFor('image', {image: attrs.cover_image}, true);
         }
 
         if (attrs.logo) {
-            attrs.logo = urlService.utils.urlFor('image', {image: attrs.logo}, true);
+            attrs.logo = urlUtils.urlFor('image', {image: attrs.logo}, true);
         }
 
         if (attrs.icon) {
-            attrs.icon = urlService.utils.urlFor('image', {image: attrs.icon}, true);
+            attrs.icon = urlUtils.urlFor('image', {image: attrs.icon}, true);
         }
     }
 
@@ -91,7 +124,7 @@ const forSettings = (attrs) => {
 };
 
 const forImage = (path) => {
-    return urlService.utils.urlFor('image', {image: path}, true);
+    return urlUtils.urlFor('image', {image: path}, true);
 };
 
 module.exports.forPost = forPost;

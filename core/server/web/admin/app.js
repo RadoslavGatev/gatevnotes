@@ -3,13 +3,17 @@ const express = require('express');
 const serveStatic = require('express').static;
 const config = require('../../config');
 const constants = require('../../lib/constants');
-const urlService = require('../../services/url');
+const urlUtils = require('../../lib/url-utils');
 const shared = require('../shared');
 const adminMiddleware = require('./middleware');
 
 module.exports = function setupAdminApp() {
     debug('Admin setup start');
     const adminApp = express();
+
+    // Make sure 'req.secure' and `req.hostname` is valid for proxied requests
+    // (X-Forwarded-Proto header will be checked, if present)
+    adminApp.enable('trust proxy');
 
     // Admin assets
     // @TODO ensure this gets a local 404 error handler
@@ -19,13 +23,10 @@ module.exports = function setupAdminApp() {
         {maxAge: (configMaxAge || configMaxAge === 0) ? configMaxAge : constants.ONE_YEAR_MS, fallthrough: false}
     ));
 
-    // Service Worker for offline support
-    adminApp.get(/^\/(sw.js|sw-registration.js)$/, require('./serviceworker'));
-
     // Ember CLI's live-reload script
     if (config.get('env') === 'development') {
         adminApp.get('/ember-cli-live-reload.js', function emberLiveReload(req, res) {
-            res.redirect(`http://localhost:4200${urlService.utils.getSubdir()}/ghost/ember-cli-live-reload.js`);
+            res.redirect(`http://localhost:4200${urlUtils.getSubdir()}/ghost/ember-cli-live-reload.js`);
         });
     }
 

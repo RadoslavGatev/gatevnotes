@@ -1,32 +1,23 @@
 const ghostBookshelf = require('./base');
-const security = require('../lib/security');
 
 const Member = ghostBookshelf.Model.extend({
     tableName: 'members',
 
-    onSaving() {
-        ghostBookshelf.Model.prototype.onSaving.apply(this, arguments);
-
-        if (this.hasChanged('password')) {
-            return security.password.hash(String(this.get('password')))
-                .then((hash) => {
-                    this.set('password', hash);
-                });
-        }
+    emitChange: function emitChange(event, options) {
+        const eventToTrigger = 'member' + '.' + event;
+        ghostBookshelf.Model.prototype.emitChange.bind(this)(this, eventToTrigger, options);
     },
 
-    comparePassword(rawPassword) {
-        return security.password.compare(rawPassword, this.get('password'));
+    onCreated: function onCreated(model, attrs, options) {
+        ghostBookshelf.Model.prototype.onCreated.apply(this, arguments);
+
+        model.emitChange('added', options);
     },
 
-    toJSON(unfilteredOptions) {
-        var options = Member.filterOptions(unfilteredOptions, 'toJSON'),
-            attrs = ghostBookshelf.Model.prototype.toJSON.call(this, options);
+    onDestroyed: function onDestroyed(model, options) {
+        ghostBookshelf.Model.prototype.onDestroyed.apply(this, arguments);
 
-        // remove password hash and tokens for security reasons
-        delete attrs.password;
-
-        return attrs;
+        model.emitChange('deleted', options);
     }
 });
 

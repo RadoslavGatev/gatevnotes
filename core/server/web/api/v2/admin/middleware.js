@@ -11,15 +11,19 @@ const notImplemented = function (req, res, next) {
     // @NOTE: integrations have limited access for now
     const whitelisted = {
         // @NOTE: stable
+        site: ['GET'],
         posts: ['GET', 'PUT', 'DELETE', 'POST'],
-        tags: ['GET', 'PUT', 'DELETE', 'POST'],
+        pages: ['GET', 'PUT', 'DELETE', 'POST'],
         images: ['POST'],
         // @NOTE: experimental
+        tags: ['GET', 'PUT', 'DELETE', 'POST'],
         users: ['GET'],
-        themes: ['POST'],
-        subscribers: ['GET', 'PUT', 'DELETE', 'POST'],
-        configuration: ['GET'],
-        actions: ['GET']
+        themes: ['POST', 'PUT'],
+        members: ['GET', 'PUT', 'DELETE', 'POST'],
+        config: ['GET'],
+        webhooks: ['POST', 'DELETE'],
+        schedules: ['PUT'],
+        db: ['POST']
     };
 
     const match = req.url.match(/^\/(\w+)\/?/);
@@ -53,15 +57,26 @@ module.exports.authAdminApi = [
 ];
 
 /**
- * Authentication for client endpoints
+ * Authentication for private endpoints with token in URL
+ * Ex.: For scheduler publish endpoint
  */
-module.exports.authenticateClient = function authenticateClient(client) {
-    return [
-        auth.authenticate.authenticateClient,
-        auth.authenticate.authenticateUser,
-        auth.authorize.requiresAuthorizedClient(client),
-        shared.middlewares.api.cors,
-        shared.middlewares.urlRedirects.adminRedirect,
-        shared.middlewares.prettyUrls
-    ];
-};
+module.exports.authAdminApiWithUrl = [
+    auth.authenticate.authenticateAdminApiWithUrl,
+    auth.authorize.authorizeAdminApi,
+    shared.middlewares.updateUserLastSeen,
+    shared.middlewares.api.cors,
+    shared.middlewares.urlRedirects.adminRedirect,
+    shared.middlewares.prettyUrls,
+    notImplemented
+];
+
+/**
+ * Middleware for public admin endpoints
+ */
+module.exports.publicAdminApi = [
+    shared.middlewares.api.cors,
+    shared.middlewares.urlRedirects.adminRedirect,
+    shared.middlewares.prettyUrls,
+    notImplemented
+];
+

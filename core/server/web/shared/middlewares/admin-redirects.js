@@ -1,20 +1,20 @@
 const express = require('express');
-const urlService = require('../../../services/url');
+const config = require('../../../config');
+const urlUtils = require('../../../lib/url-utils');
 
 const adminRedirect = (path) => {
     return function doRedirect(req, res) {
-        return urlService.utils.redirectToAdmin(301, res, path);
+        return urlUtils.redirectToAdmin(301, res, path);
     };
 };
 
+// redirect to /ghost to the admin
 module.exports = function adminRedirects() {
     const router = express.Router();
-    // Admin redirects - register redirect as route
-    // TODO: this should be middleware!
-    router.get(/^\/(logout|signout)\/$/, adminRedirect('#/signout/'));
-    router.get(/^\/signup\/$/, adminRedirect('#/signup/'));
-    // redirect to /ghost and let that do the authentication to prevent redirects to /ghost//admin etc.
-    router.get(/^\/((ghost-admin|admin|dashboard|signin|login)\/?)$/, adminRedirect('/'));
+
+    if (config.get('admin:redirects')) {
+        router.get(/^\/ghost\/?$/, adminRedirect('/'));
+    }
 
     return router;
 };

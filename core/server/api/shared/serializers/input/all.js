@@ -5,7 +5,11 @@ const utils = require('../../utils');
 const INTERNAL_OPTIONS = ['transacting', 'forUpdate'];
 
 /**
- * Transform into model readable language.
+ * @description Shared serializer for all requests.
+ *
+ * Transforms certain options from API notation into model readable language/notation.
+ *
+ * e.g. API uses "include", but model layer uses "withRelated".
  */
 module.exports = {
     all(apiConfig, frame) {
@@ -33,22 +37,5 @@ module.exports = {
             debug('omit internal options');
             frame.options = _.omit(frame.options, INTERNAL_OPTIONS);
         }
-
-        debug(frame.options);
-    },
-
-    add(apiConfig, frame) {
-        // CASE: will remove unwanted null values
-        _.each(frame.data[apiConfig.docName], (value, index) => {
-            if (!_.isObject(frame.data[apiConfig.docName][index])) {
-                return;
-            }
-
-            frame.data[apiConfig.docName][index] = _.omitBy(frame.data[apiConfig.docName][index], _.isNull);
-        });
-    },
-
-    edit() {
-        return this.add(...arguments);
     }
 };

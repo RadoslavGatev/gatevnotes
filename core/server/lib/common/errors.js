@@ -30,18 +30,6 @@ const ghostErrors = {
             errorType: 'DatabaseVersionError'
         }, options));
     },
-    DatabaseNotPopulatedError: function DatabaseNotPopulatedError(options) {
-        GhostError.call(this, merge({
-            statusCode: 500,
-            errorType: 'DatabaseNotPopulatedError'
-        }, options));
-    },
-    DatabaseNotSeededError: function DatabaseNotSeededError(options) {
-        GhostError.call(this, merge({
-            statusCode: 500,
-            errorType: 'DatabaseNotSeededError'
-        }, options));
-    },
     EmailError: function EmailError(options) {
         GhostError.call(this, merge({
             statusCode: 500,
@@ -65,6 +53,12 @@ const ghostErrors = {
         GhostError.call(this, merge({
             statusCode: 409,
             errorType: 'UpdateCollisionError'
+        }, options));
+    },
+    HelperWarning: function HelperWarning(options) {
+        GhostError.call(this, merge({
+            errorType: 'HelperWarning',
+            hideStack: true
         }, options));
     }
 };

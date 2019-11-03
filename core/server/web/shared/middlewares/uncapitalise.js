@@ -12,7 +12,7 @@
 //  req.baseUrl = /blog
 //  req.path =  /ghost/signin/
 
-const urlService = require('../../../services/url');
+const urlUtils = require('../../../lib/url-utils');
 const common = require('../../../lib/common');
 const localUtils = require('../utils');
 
@@ -22,13 +22,13 @@ const uncapitalise = (req, res, next) => {
     let decodedURI;
 
     const isSignupOrReset = pathToTest.match(/^(.*\/ghost\/(signup|reset)\/)/i),
-        isAPI = pathToTest.match(/^(.*\/ghost\/api\/v[\d.]+\/.*?\/)/i);
+        isAPI = pathToTest.match(/^(.*\/ghost\/api\/(v[\d.]+|canary)\/.*?\/)/i);
 
     if (isSignupOrReset) {
         pathToTest = isSignupOrReset[1];
     }
 
-    // Do not lowercase anything after e.g. /api/v0.1/ to protect :key/:slug
+    // Do not lowercase anything after e.g. /api/v{X}/ to protect :key/:slug
     if (isAPI) {
         pathToTest = isAPI[1];
     }
@@ -48,7 +48,7 @@ const uncapitalise = (req, res, next) => {
      */
     if (/[A-Z]/.test(decodedURI)) {
         redirectPath = (localUtils.removeOpenRedirectFromUrl((req.originalUrl || req.url).replace(pathToTest, pathToTest.toLowerCase())));
-        return urlService.utils.redirect301(res, redirectPath);
+        return urlUtils.redirect301(res, redirectPath);
     }
 
     next();

@@ -3,6 +3,10 @@ module.exports = {
         return require('./all');
     },
 
+    get authentication() {
+        return require('./authentication');
+    },
+
     get db() {
         return require('./db');
     },
@@ -25,6 +29,10 @@ module.exports = {
 
     get slugs() {
         return require('./slugs');
+    },
+
+    get schedules() {
+        return require('./schedules');
     },
 
     get webhooks() {
@@ -51,16 +59,8 @@ module.exports = {
         return require('./mail');
     },
 
-    get subscribers() {
-        return require('./subscribers');
-    },
-
-    get members() {
-        return require('./members');
-    },
-
-    get upload() {
-        return require('./upload');
+    get images() {
+        return require('./images');
     },
 
     get tags() {
@@ -83,8 +83,8 @@ module.exports = {
         return require('./authors');
     },
 
-    get configuration() {
-        return require('./configuration');
+    get config() {
+        return require('./config');
     },
 
     get themes() {
@@ -93,5 +93,9 @@ module.exports = {
 
     get actions() {
         return require('./actions');
+    },
+
+    get site() {
+        return require('./site');
     }
 };

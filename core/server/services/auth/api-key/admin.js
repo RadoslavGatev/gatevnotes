@@ -1,10 +1,12 @@
 const jwt = require('jsonwebtoken');
+const url = require('url');
 const models = require('../../../models');
 const common = require('../../../lib/common');
+const _ = require('lodash');
 
-const JWT_OPTIONS = {
-    maxAge: '5m',
-    algorithms: ['HS256']
+let JWT_OPTIONS = {
+    algorithms: ['HS256'],
+    maxAge: '5m'
 };
 
 /**
@@ -21,8 +23,49 @@ const _extractTokenFromHeader = function extractTokenFromHeader(header) {
 };
 
 /**
+ * Extract JWT token from admin API URL query
+ * Eg. ${ADMIN_API_URL}/?token=${JWT}
+ * @param {string} reqUrl
+ */
+const _extractTokenFromUrl = function extractTokenFromUrl(reqUrl) {
+    const {query} = url.parse(reqUrl, true);
+    return query.token;
+};
+
+const authenticate = (req, res, next) => {
+    // CASE: we don't have an Authorization header so allow fallthrough to other
+    // auth middleware or final "ensure authenticated" check
+    if (!req.headers || !req.headers.authorization) {
+        req.api_key = null;
+        return next();
+    }
+    const token = _extractTokenFromHeader(req.headers.authorization);
+
+    if (!token) {
+        return next(new common.errors.UnauthorizedError({
+            message: common.i18n.t('errors.middleware.auth.incorrectAuthHeaderFormat'),
+            code: 'INVALID_AUTH_HEADER'
+        }));
+    }
+
+    return authenticateWithToken(req, res, next, {token, JWT_OPTIONS});
+};
+
+const authenticateWithUrl = (req, res, next) => {
+    const token = _extractTokenFromUrl(req.originalUrl);
+    if (!token) {
+        return next(new common.errors.UnauthorizedError({
+            message: common.i18n.t('errors.middleware.auth.invalidTokenWithMessage', {message: 'No token found in URL'}),
+            code: 'INVALID_JWT'
+        }));
+    }
+    // CASE: Scheduler publish URLs can have long maxAge but controllerd by expiry and neverBefore
+    return authenticateWithToken(req, res, next, {token, JWT_OPTIONS: _.omit(JWT_OPTIONS, 'maxAge')});
+};
+
+/**
  * Admin API key authentication flow:
- * 1. extract the JWT token from the `Authorization: Ghost xxxx` header
+ * 1. extract the JWT token from the `Authorization: Ghost xxxx` header or from URL(for schedules)
  * 2. decode the JWT to extract the api_key id from the "key id" header claim
  * 3. find a matching api_key record
  * 4. verify the JWT (matching secret, matching URL path, not expired)
@@ -34,23 +77,7 @@ const _extractTokenFromHeader = function extractTokenFromHeader(header) {
  * - the "Audience" claim should match the requested API path
  *   https://tools.ietf.org/html/rfc7519#section-4.1.3
  */
-const authenticate = (req, res, next) => {
-    // CASE: we don't have an Authorization header so allow fallthrough to other
-    // auth middleware or final "ensure authenticated" check
-    if (!req.headers || !req.headers.authorization) {
-        req.api_key = null;
-        return next();
-    }
-
-    const token = _extractTokenFromHeader(req.headers.authorization);
-
-    if (!token) {
-        return next(new common.errors.UnauthorizedError({
-            message: common.i18n.t('errors.middleware.auth.incorrectAuthHeaderFormat'),
-            code: 'INVALID_AUTH_HEADER'
-        }));
-    }
-
+const authenticateWithToken = (req, res, next, {token, JWT_OPTIONS}) => {
     const decoded = jwt.decode(token, {complete: true});
 
     if (!decoded || !decoded.header) {
@@ -60,12 +87,12 @@ const authenticate = (req, res, next) => {
         }));
     }
 
-    const apiKeyId = decoded.payload.kid;
+    const apiKeyId = decoded.header.kid;
 
     if (!apiKeyId) {
         return next(new common.errors.BadRequestError({
-            message: common.i18n.t('errors.middleware.auth.adminApiKeyMissing'),
-            code: 'MISSING_ADMIN_API_KEY'
+            message: common.i18n.t('errors.middleware.auth.adminApiKidMissing'),
+            code: 'MISSING_ADMIN_API_KID'
         }));
     }
 
@@ -90,9 +117,12 @@ const authenticate = (req, res, next) => {
         // https://github.com/auth0/node-jsonwebtoken/issues/208#issuecomment-231861138
         const secret = Buffer.from(apiKey.get('secret'), 'hex');
 
-        // ensure the token was meant for this endpoint
+        const {pathname} = url.parse(req.originalUrl);
+        const [hasMatch, version = 'v2', api = 'admin'] = pathname.match(/ghost\/api\/([^/]+)\/([^/]+)\/(.+)*/); // eslint-disable-line no-unused-vars
+
+        // ensure the token was meant for this api version
         const options = Object.assign({
-            audience: req.originalUrl
+            audience: new RegExp(`\/?${version}\/${api}\/?$`) // eslint-disable-line no-useless-escape
         }, JWT_OPTIONS);
 
         try {
@@ -119,5 +149,6 @@ const authenticate = (req, res, next) => {
 };
 
 module.exports = {
-    authenticate
+    authenticate,
+    authenticateWithUrl
 };

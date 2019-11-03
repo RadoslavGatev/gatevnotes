@@ -16,7 +16,16 @@ module.exports = {
     twitter: 'twitter',
     default_locale: 'lang',
     active_timezone: 'timezone',
+    // TODO: substitute ghost_head and ghost_foot with codeinjection_* when we drop v2 (Ghost 4.0)
     ghost_head: 'ghost_head',
     ghost_foot: 'ghost_foot',
-    navigation: 'navigation'
+    navigation: 'navigation',
+    meta_title: 'meta_title',
+    meta_description: 'meta_description',
+    og_image: 'og_image',
+    og_title: 'og_title',
+    og_description: 'og_description',
+    twitter_image: 'twitter_image',
+    twitter_title: 'twitter_title',
+    twitter_description: 'twitter_description'
 };

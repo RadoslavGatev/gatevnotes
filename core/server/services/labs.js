@@ -1,20 +1,17 @@
 const settingsCache = require('./settings/cache');
 const _ = require('lodash');
 const Promise = require('bluebird');
-const SafeString = require('./themes/engine').SafeString;
+const SafeString = require('../../frontend/services/themes/engine').SafeString;
 const common = require('../lib/common');
-const config = require('../config');
 let labs = module.exports = {};
 
 labs.isSet = function isSet(flag) {
-    /**
-     * TODO: Uses hard-check for members prototype, removed here when added to settings
-     */
-    if (flag === 'members' && config.get('enableDeveloperExperiments')) {
-        return true;
-    }
     var labsConfig = settingsCache.get('labs');
     return labsConfig && labsConfig[flag] && labsConfig[flag] === true;
+};
+
+labs.getAll = () => {
+    return settingsCache.get('labs');
 };
 
 labs.enabledHelper = function enabledHelper(options, callback) {
@@ -36,14 +33,10 @@ labs.enabledHelper = function enabledHelper(options, callback) {
 
     common.logging.error(new common.errors.DisabledFeatureError(errDetails));
 
-    errString = new SafeString(
-        '<script>console.error("' + _.values(errDetails).join(' ') + '");</script>'
-    );
+    errString = new SafeString(`<script>console.error("${_.values(errDetails).join(' ')}");</script>`);
 
     if (options.async) {
-        return Promise.resolve(function asyncError() {
-            return errString;
-        });
+        return Promise.resolve(errString);
     }
 
     return errString;

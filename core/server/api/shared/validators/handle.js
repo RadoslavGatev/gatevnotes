@@ -4,13 +4,19 @@ const common = require('../../../lib/common');
 const sequence = require('../../../lib/promise/sequence');
 
 /**
+ * @description Shared input validation handler.
+ *
  * The shared validation handler runs the request through all the validation steps.
  *
- * 1. shared validation
- * 2. api validation
+ * 1. Shared validation
+ * 2. API validation
+ *
+ * @param {Object} apiConfig - Docname + method of the ctrl
+ * @param {Object} apiValidators - Target API validators
+ * @param {Object} frame
  */
 module.exports.input = (apiConfig, apiValidators, frame) => {
-    debug('input');
+    debug('input begin');
 
     const tasks = [];
     const sharedValidators = require('./input');
@@ -57,6 +63,6 @@ module.exports.input = (apiConfig, apiValidators, frame) => {
         }
     }
 
-    debug(tasks);
+    debug('input ready');
     return sequence(tasks);
 };
