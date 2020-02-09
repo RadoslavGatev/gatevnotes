@@ -6,6 +6,7 @@ const gating = require('./post-gating');
 const clean = require('./clean');
 const extraAttrs = require('./extra-attrs');
 const postsMetaSchema = require('../../../../../../data/schema').tables.posts_meta;
+const config = require('../../../../../../config');
 
 const mapUser = (model, frame) => {
     const jsonModel = model.toJSON ? model.toJSON(frame.options) : model;
@@ -60,6 +61,10 @@ const mapPost = (model, frame) => {
             if (relation === 'authors' && jsonModel.authors) {
                 jsonModel.authors = jsonModel.authors.map(author => mapUser(author, frame));
             }
+
+            if (relation === 'email' && _.isEmpty(jsonModel.email)) {
+                jsonModel.email = null;
+            }
         });
     }
 
@@ -75,9 +80,19 @@ const mapPost = (model, frame) => {
     return jsonModel;
 };
 
+const mapPage = (model, frame) => {
+    const jsonModel = mapPost(model, frame);
+
+    delete jsonModel.email_subject;
+    delete jsonModel.send_email_when_published;
+
+    return jsonModel;
+};
+
 const mapSettings = (attrs, frame) => {
     url.forSettings(attrs);
     extraAttrs.forSettings(attrs, frame);
+    clean.settings(attrs, frame);
 
     // NOTE: The cleanup of deprecated ghost_head/ghost_foot has to happen here
     //       because codeinjection_head/codeinjection_foot are assigned on a previous
@@ -85,11 +100,17 @@ const mapSettings = (attrs, frame) => {
     //      fields completely.
     if (_.isArray(attrs)) {
         attrs = _.filter(attrs, (o) => {
+            if (o.key === 'brand' && !config.get('enableDeveloperExperiments')) {
+                return false;
+            }
             return o.key !== 'ghost_head' && o.key !== 'ghost_foot';
         });
     } else {
         delete attrs.ghost_head;
         delete attrs.ghost_foot;
+        if (!config.get('enableDeveloperExperiments')) {
+            delete attrs.brand;
+        }
     }
 
     return attrs;
@@ -121,10 +142,23 @@ const mapAction = (model, frame) => {
 
 const mapMember = (model, frame) => {
     const jsonModel = model.toJSON ? model.toJSON(frame.options) : model;
+
+    if (_.get(jsonModel, 'stripe.subscriptions')) {
+        let compedSubscriptions = _.get(jsonModel, 'stripe.subscriptions').filter(sub => (sub.plan.nickname === 'Complimentary'));
+        const hasCompedSubscription = !!(compedSubscriptions.length);
+
+        // NOTE: `frame.options.fields` has to be taken into account in the same way as for `stripe.subscriptions`
+        //       at the moment of implementation fields were not fully supported by members endpoints
+        Object.assign(jsonModel, {
+            comped: hasCompedSubscription
+        });
+    }
+
     return jsonModel;
 };
 
 module.exports.mapPost = mapPost;
+module.exports.mapPage = mapPage;
 module.exports.mapUser = mapUser;
 module.exports.mapTag = mapTag;
 module.exports.mapIntegration = mapIntegration;
