@@ -20,6 +20,12 @@
                     "maxLength": 191,
                     "pattern": "^([^,]|$)"
                 },
+                "email": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 191,
+                    "pattern": "^([^,]|$)"
+                },
                 "note": {
                     "type": "string",
                     "minLength": 0,
@@ -34,8 +40,8 @@
                 "id": {
                     "strip": true
                 },
-                "email": {
-                    "strip": true
+                "labels": {
+                    "$ref": "members#/definitions/member-labels"
                 },
                 "created_at": {
                     "strip": true
@@ -54,4 +60,4 @@
         }
     },
     "required": ["members"]
-  }
+}

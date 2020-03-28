@@ -15,9 +15,6 @@ require('./base/listeners');
 exports = module.exports;
 
 models = [
-    'app-field',
-    'app-setting',
-    'app',
     'permission',
     'post',
     'role',
@@ -37,7 +34,8 @@ models = [
     'posts-meta',
     'member-stripe-customer',
     'stripe-customer-subscription',
-    'email'
+    'email',
+    'label'
 ];
 
 function init() {
