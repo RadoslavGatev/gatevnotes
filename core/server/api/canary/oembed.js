@@ -29,8 +29,8 @@ async function fetchBookmarkData(url, html) {
             html = response.body;
         }
         scraperResponse = await metascraper({html, url});
-    } catch (e) {
-        return Promise.reject();
+    } catch (err) {
+        return Promise.reject(err);
     }
 
     const metadata = Object.assign({}, scraperResponse, {
@@ -83,7 +83,7 @@ function unknownProvider(url) {
 }
 
 function knownProvider(url) {
-    return extract(url).catch((err) => {
+    return extract(url, {maxwidth: 1280}).catch((err) => {
         return Promise.reject(new common.errors.InternalServerError({
             message: err.message
         }));
@@ -157,7 +157,11 @@ function fetchOembedData(_url) {
             // fetch oembed response from embedded rel="alternate" url
             return request(oembedUrl, {
                 method: 'GET',
-                json: true
+                json: true,
+                timeout: 2 * 1000,
+                headers: {
+                    'user-agent': 'Ghost(https://github.com/TryGhost/Ghost)'
+                }
             }).then((response) => {
                 // validate the fetched json against the oembed spec to avoid
                 // leaking non-oembed responses

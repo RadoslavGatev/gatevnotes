@@ -1,6 +1,6 @@
-var path = require('path'),
-    fs = require('fs-extra'),
-    _ = require('lodash');
+const path = require('path');
+const fs = require('fs-extra');
+const _ = require('lodash');
 
 exports.isPrivacyDisabled = function isPrivacyDisabled(privacyFlag) {
     if (!this.get('privacy')) {
@@ -29,7 +29,7 @@ exports.isPrivacyDisabled = function isPrivacyDisabled(privacyFlag) {
  * Path can be a "." to re-present current folder
  */
 exports.makePathsAbsolute = function makePathsAbsolute(obj, parent) {
-    var self = this;
+    const self = this;
 
     _.each(obj, function (configValue, pathsKey) {
         if (_.isObject(configValue)) {
@@ -53,10 +53,8 @@ exports.getContentPath = function getContentPath(type) {
         return path.join(this.get('paths:contentPath'), 'images/');
     case 'themes':
         return path.join(this.get('paths:contentPath'), 'themes/');
-    case 'storage':
-        return path.join(this.get('paths:contentPath'), 'adapters', 'storage/');
-    case 'scheduling':
-        return path.join(this.get('paths:contentPath'), 'adapters', 'scheduling/');
+    case 'adapters':
+        return path.join(this.get('paths:contentPath'), 'adapters/');
     case 'logs':
         return path.join(this.get('paths:contentPath'), 'logs/');
     case 'data':
@@ -82,7 +80,7 @@ exports.doesContentPathExist = function doesContentPathExist() {
 * Check if the URL in config has a protocol and sanitise it if not including a warning that it should be changed
 */
 exports.checkUrlProtocol = function checkUrlProtocol() {
-    var url = this.get('url');
+    const url = this.get('url');
 
     if (!url.match(/^https?:\/\//i)) {
         throw new Error('URL in config must be provided with protocol, eg. "http://my-ghost-blog.com"');
@@ -97,7 +95,7 @@ exports.checkUrlProtocol = function checkUrlProtocol() {
  * https://github.com/indexzero/nconf/issues/235#issuecomment-257606507
  */
 exports.sanitizeDatabaseProperties = function sanitizeDatabaseProperties() {
-    var database = this.get('database');
+    const database = this.get('database');
 
     if (this.get('database:client') === 'mysql') {
         delete database.connection.filename;
