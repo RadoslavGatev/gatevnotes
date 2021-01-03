@@ -1,6 +1,6 @@
 const _ = require('lodash');
 const debug = require('ghost-ignition').debug('services:webhooks:trigger');
-const {logging} = require('../../lib/common');
+const logging = require('../../../shared/logging');
 const request = require('../../lib/request');
 const models = require('../../models');
 const payload = require('./payload');
@@ -64,13 +64,13 @@ const response = {
 
 module.exports = (event, model) => {
     webhooks.getAll(event)
-        .then((webhooks) => {
-            debug(`${webhooks.models.length} webhooks found for ${event}.`);
+        .then((hooks) => {
+            debug(`${hooks.models.length} webhooks found for ${event}.`);
 
-            _.each(webhooks.models, (webhook) => {
+            _.each(hooks.models, (webhook) => {
                 payload(webhook.get('event'), model)
-                    .then((payload) => {
-                        const reqPayload = JSON.stringify(payload);
+                    .then((hookPayload) => {
+                        const reqPayload = JSON.stringify(hookPayload);
                         const url = webhook.get('target_url');
                         const opts = {
                             body: reqPayload,
@@ -82,7 +82,7 @@ module.exports = (event, model) => {
                             retry: 5
                         };
 
-                        logging.info(`Trigger Webhook for  "${webhook.get('event')}" with url "${url}".`);
+                        logging.info(`Triggering webhook for "${webhook.get('event')}" with url "${url}"`);
 
                         request(url, opts)
                             .then(response.onSuccess(webhook))

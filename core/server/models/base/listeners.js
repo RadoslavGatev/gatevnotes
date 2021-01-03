@@ -1,15 +1,17 @@
 const moment = require('moment-timezone');
 const _ = require('lodash');
 const models = require('../../models');
-const common = require('../../lib/common');
-const sequence = require('../../lib/promise/sequence');
+const {events} = require('../../lib/common');
+const logging = require('../../../shared/logging');
+const errors = require('@tryghost/errors');
+const {sequence} = require('@tryghost/promise');
 
 /**
  * WHEN timezone changes, we will:
  * - reschedule all scheduled posts
  * - draft scheduled posts, when the published_at would be in the past
  */
-common.events.on('settings.active_timezone.edited', function (settingModel, options) {
+events.on('settings.timezone.edited', function (settingModel, options) {
     options = options || {};
     options = _.merge({}, options, {context: {internal: true}});
 
@@ -67,14 +69,14 @@ common.events.on('settings.active_timezone.edited', function (settingModel, opti
                     };
                 })).each(function (result) {
                     if (!result.isFulfilled()) {
-                        common.logging.error(new common.errors.GhostError({
+                        logging.error(new errors.GhostError({
                             err: result.reason()
                         }));
                     }
                 });
             })
             .catch(function (err) {
-                common.logging.error(new common.errors.GhostError({
+                logging.error(new errors.GhostError({
                     err: err,
                     level: 'critical'
                 }));
@@ -87,7 +89,7 @@ common.events.on('settings.active_timezone.edited', function (settingModel, opti
  * No transaction, because notifications are not sensitive and we would have to add `forUpdate`
  * to the settings model to create real lock.
  */
-common.events.on('settings.notifications.edited', function (settingModel) {
+events.on('settings.notifications.edited', function (settingModel) {
     let allNotifications = JSON.parse(settingModel.attributes.value || []);
     const options = {context: {internal: true}};
     let skip = true;
@@ -114,6 +116,6 @@ common.events.on('settings.notifications.edited', function (settingModel) {
         key: 'notifications',
         value: JSON.stringify(allNotifications)
     }, options).catch(function (err) {
-        common.errors.logError(err);
+        errors.logError(err);
     });
 });

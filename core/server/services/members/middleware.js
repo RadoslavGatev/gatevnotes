@@ -1,10 +1,11 @@
-const {logging} = require('../../lib/common');
-const config = require('../../config');
+const _ = require('lodash');
+const logging = require('../../../shared/logging');
 const labsService = require('../labs');
 const membersService = require('./index');
-const urlUtils = require('../../lib/url-utils');
+const urlUtils = require('../../../shared/url-utils');
 const ghostVersion = require('../../lib/ghost-version');
 const settingsCache = require('../settings/cache');
+const {formattedMemberResponse} = require('./utils');
 
 // @TODO: This piece of middleware actually belongs to the frontend, not to the member app
 // Need to figure a way to separate these things (e.g. frontend actually talks to members API)
@@ -53,15 +54,29 @@ const getMemberData = async function (req, res) {
     try {
         const member = await membersService.ssr.getMemberDataFromSession(req, res);
         if (member) {
-            res.json({
-                uuid: member.uuid,
-                email: member.email,
-                name: member.name,
-                firstname: member.name && member.name.split(' ')[0],
-                avatar_image: member.avatar_image,
-                subscriptions: member.stripe.subscriptions,
-                paid: member.stripe.subscriptions.length !== 0
-            });
+            res.json(formattedMemberResponse(member));
+        } else {
+            res.json(null);
+        }
+    } catch (err) {
+        logging.warn(err.message);
+        res.writeHead(err.statusCode);
+        res.end(err.message);
+    }
+};
+
+const updateMemberData = async function (req, res) {
+    try {
+        const data = _.pick(req.body, 'name', 'subscribed');
+        const member = await membersService.ssr.getMemberDataFromSession(req, res);
+        if (member) {
+            const options = {
+                id: member.id,
+                withRelated: ['stripeSubscriptions', 'stripeSubscriptions.customer']
+            };
+            const updatedMember = await membersService.api.members.update(data, options);
+
+            res.json(formattedMemberResponse(updatedMember.toJSON()));
         } else {
             res.json(null);
         }
@@ -73,21 +88,32 @@ const getMemberData = async function (req, res) {
 };
 
 const getMemberSiteData = async function (req, res) {
+    const isStripeConfigured = membersService.config.isStripeConnected();
+    const domain = urlUtils.urlFor('home', true).match(new RegExp('^https?://([^/:?#]+)(?:[/:?#]|$)', 'i'));
+    const blogDomain = domain && domain[1];
+    let supportAddress = settingsCache.get('members_support_address') || 'noreply';
+    if (!supportAddress.includes('@')) {
+        supportAddress = `${supportAddress}@${blogDomain}`;
+    }
     const response = {
         title: settingsCache.get('title'),
         description: settingsCache.get('description'),
         logo: settingsCache.get('logo'),
-        brand: settingsCache.get('brand'),
+        icon: settingsCache.get('icon'),
+        accent_color: settingsCache.get('accent_color'),
         url: urlUtils.urlFor('home', true),
         version: ghostVersion.safe,
         plans: membersService.config.getPublicPlans(),
-        allowSelfSignup: membersService.config.getAllowSelfSignup()
+        allow_self_signup: membersService.config.getAllowSelfSignup(),
+        is_stripe_configured: isStripeConfigured,
+        portal_button: settingsCache.get('portal_button'),
+        portal_name: settingsCache.get('portal_name'),
+        portal_plans: settingsCache.get('portal_plans'),
+        portal_button_icon: settingsCache.get('portal_button_icon'),
+        portal_button_signup_text: settingsCache.get('portal_button_signup_text'),
+        portal_button_style: settingsCache.get('portal_button_style'),
+        members_support_address: supportAddress
     };
-
-    // Brand is currently an experimental feature
-    if (!config.get('enableDeveloperExperiments')) {
-        delete response.brand;
-    }
 
     res.json({site: response});
 };
@@ -106,20 +132,40 @@ const createSessionFromMagicLink = async function (req, res, next) {
         }
     });
 
-    // We need to include the subdirectory,
-    // members is already removed from the path by express because it's a mount path
-    let redirectPath = `${urlUtils.getSubdir()}${req.path}`;
-
     try {
-        await membersService.ssr.exchangeTokenForSession(req, res);
+        const member = await membersService.ssr.exchangeTokenForSession(req, res);
+        const subscriptions = member && member.stripe && member.stripe.subscriptions || [];
 
-        // Do a standard 302 redirect, with success=true
+        const action = req.query.action || req.query['portal-action'];
+
+        if (action === 'signup') {
+            let customRedirect = '';
+            if (subscriptions.find(sub => ['active', 'trialing'].includes(sub.status))) {
+                customRedirect = settingsCache.get('members_paid_signup_redirect') || '';
+            } else {
+                customRedirect = settingsCache.get('members_free_signup_redirect') || '';
+            }
+
+            if (customRedirect && customRedirect !== '/') {
+                const baseUrl = urlUtils.getSiteUrl();
+                const ensureEndsWith = (string, endsWith) => (string.endsWith(endsWith) ? string : string + endsWith);
+                const removeLeadingSlash = string => string.replace(/^\//, '');
+
+                const redirectUrl = new URL(removeLeadingSlash(ensureEndsWith(customRedirect, '/')), ensureEndsWith(baseUrl, '/'));
+
+                return res.redirect(redirectUrl.href);
+            }
+        }
+
+        // Do a standard 302 redirect to the homepage, with success=true
         searchParams.set('success', true);
+        res.redirect(`${urlUtils.getSubdir()}/?${searchParams.toString()}`);
     } catch (err) {
         logging.warn(err.message);
+
+        // Do a standard 302 redirect to the homepage, with success=false
         searchParams.set('success', false);
-    } finally {
-        res.redirect(`${redirectPath}?${searchParams.toString()}`);
+        res.redirect(`${urlUtils.getSubdir()}/?${searchParams.toString()}`);
     }
 };
 
@@ -129,6 +175,7 @@ module.exports = {
     createSessionFromMagicLink,
     getIdentityToken,
     getMemberData,
+    updateMemberData,
     getMemberSiteData,
     deleteSession,
     stripeWebhooks: (req, res, next) => membersService.api.middleware.handleStripeWebhook(req, res, next)

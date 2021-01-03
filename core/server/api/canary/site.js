@@ -1,7 +1,6 @@
 const ghostVersion = require('../../lib/ghost-version');
 const settingsCache = require('../../services/settings/cache');
-const urlUtils = require('../../lib/url-utils');
-const config = require('../../config');
+const urlUtils = require('../../../shared/url-utils');
 
 const site = {
     docName: 'site',
@@ -13,15 +12,10 @@ const site = {
                 title: settingsCache.get('title'),
                 description: settingsCache.get('description'),
                 logo: settingsCache.get('logo'),
-                brand: settingsCache.get('brand'),
+                accent_color: settingsCache.get('accent_color'),
                 url: urlUtils.urlFor('home', true),
                 version: ghostVersion.safe
             };
-
-            // Brand is currently an experimental feature
-            if (!config.get('enableDeveloperExperiments')) {
-                delete response.brand;
-            }
 
             return response;
         }

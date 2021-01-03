@@ -4,17 +4,15 @@ const fs = require('fs-extra');
 
 const path = require('path');
 const Promise = require('bluebird');
-const config = require('../../config');
-const common = require('../../lib/common');
-const urlUtils = require('../../lib/url-utils');
+const config = require('../../../shared/config');
+const logging = require('../../../shared/logging');
+const urlUtils = require('../../../shared/url-utils');
 const exporter = require('../exporter');
-let writeExportFile;
-let backup;
 
-writeExportFile = function writeExportFile(exportResult) {
+const writeExportFile = function writeExportFile(exportResult) {
     const filename = path.resolve(urlUtils.urlJoin(config.get('paths').contentPath, 'data', exportResult.filename));
 
-    return fs.writeFile(filename, JSON.stringify(exportResult.data)).return(filename);
+    return Promise.resolve(fs.writeFile(filename, JSON.stringify(exportResult.data))).return(filename);
 };
 
 const readBackup = async (filename) => {
@@ -25,8 +23,8 @@ const readBackup = async (filename) => {
     const exists = await fs.pathExists(backupPath);
 
     if (exists) {
-        const backup = await fs.readFile(backupPath);
-        return JSON.parse(backup);
+        const backupFile = await fs.readFile(backupPath);
+        return JSON.parse(backupFile);
     } else {
         return null;
     }
@@ -37,8 +35,8 @@ const readBackup = async (filename) => {
  * does an export, and stores this in a local file
  * @returns {Promise<*>}
  */
-backup = function backup(options) {
-    common.logging.info('Creating database backup');
+const backup = function backup(options) {
+    logging.info('Creating database backup');
     options = options || {};
 
     const props = {
@@ -49,7 +47,7 @@ backup = function backup(options) {
     return Promise.props(props)
         .then(writeExportFile)
         .then(function successMessage(filename) {
-            common.logging.info('Database backup written to: ' + filename);
+            logging.info('Database backup written to: ' + filename);
             return filename;
         });
 };

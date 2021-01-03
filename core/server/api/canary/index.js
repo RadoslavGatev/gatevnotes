@@ -71,6 +71,10 @@ module.exports = {
         return shared.pipeline(require('./settings'), localUtils);
     },
 
+    get membersStripeConnect() {
+        return shared.pipeline(require('./membersStripeConnect'), localUtils);
+    },
+
     get members() {
         return shared.pipeline(require('./members'), localUtils);
     },
@@ -129,6 +133,10 @@ module.exports = {
 
     get site() {
         return shared.pipeline(require('./site'), localUtils);
+    },
+
+    get snippets() {
+        return shared.pipeline(require('./snippets'), localUtils);
     },
 
     get serializers() {

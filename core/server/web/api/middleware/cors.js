@@ -1,7 +1,7 @@
 const cors = require('cors');
 const url = require('url');
 const os = require('os');
-const urlUtils = require('../../../lib/url-utils');
+const urlUtils = require('../../../../shared/url-utils');
 
 let whitelist = [];
 const ENABLE_CORS = {origin: true, maxAge: 86400};
@@ -68,7 +68,7 @@ function handleCORS(req, cb) {
     const origin = req.get('origin');
 
     // Request must have an Origin header
-    if (!origin) {
+    if (!origin || origin === 'null') {
         return cb(null, DISABLE_CORS);
     }
 

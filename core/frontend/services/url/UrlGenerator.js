@@ -1,7 +1,7 @@
 const _ = require('lodash');
 const nql = require('@nexes/nql');
 const debug = require('ghost-ignition').debug('services:url:generator');
-const localUtils = require('../../../server/lib/url-utils');
+const localUtils = require('../../../shared/url-utils');
 
 // @TODO: merge with filter plugin
 const EXPANSIONS = [{
@@ -23,8 +23,6 @@ const EXPANSIONS = [{
     key: 'primary_author',
     replacement: 'primary_author.slug'
 }];
-
-const mapNQLKeyValues = require('../../../shared/nql-map-key-values');
 
 /**
  * The UrlGenerator class is responsible to generate urls based on a router's conditions.
@@ -49,7 +47,7 @@ class UrlGenerator {
             this.filter = this.router.getFilter();
             this.nql = nql(this.filter, {
                 expansions: EXPANSIONS,
-                transformer: mapNQLKeyValues({
+                transformer: nql.utils.mapKeyValues({
                     key: {
                         from: 'page',
                         to: 'type'
@@ -144,7 +142,7 @@ class UrlGenerator {
 
     /**
      * @description Try to own a resource and generate it's url if so.
-     * @param {Resource} resource
+     * @param {import('./Resource')} resource - instance of the Resource class
      * @returns {boolean}
      * @private
      */
@@ -163,17 +161,7 @@ class UrlGenerator {
 
         // CASE 1: route has no custom filter, it will own the resource for sure
         // CASE 2: find out if my filter matches the resource
-        if (!this.filter) {
-            this.urls.add({
-                url: url,
-                generatorId: this.uid,
-                resource: resource
-            });
-
-            resource.reserve();
-            this._resourceListeners(resource);
-            return true;
-        } else if (this.nql.queryJSON(resource.data)) {
+        if ((!this.filter) || (this.nql.queryJSON(resource.data))) {
             this.urls.add({
                 url: url,
                 generatorId: this.uid,

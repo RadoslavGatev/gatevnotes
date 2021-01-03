@@ -3,15 +3,16 @@ const _ = require('lodash');
 const uuid = require('uuid');
 const moment = require('moment');
 const Promise = require('bluebird');
-const sequence = require('../lib/promise/sequence');
-const common = require('../lib/common');
+const {sequence} = require('@tryghost/promise');
+const {i18n} = require('../lib/common');
+const errors = require('@tryghost/errors');
 const htmlToText = require('html-to-text');
 const ghostBookshelf = require('./base');
-const config = require('../config');
+const config = require('../../shared/config');
 const settingsCache = require('../services/settings/cache');
 const mobiledocLib = require('../lib/mobiledoc');
 const relations = require('./relations');
-const urlUtils = require('../lib/url-utils');
+const urlUtils = require('../../shared/url-utils');
 const MOBILEDOC_REVISIONS_COUNT = 10;
 const ALL_STATUSES = ['published', 'draft', 'scheduled'];
 
@@ -49,12 +50,12 @@ Post = ghostBookshelf.Model.extend({
         }
 
         return {
-            send_email_when_published: false,
             uuid: uuid.v4(),
             status: 'draft',
             featured: false,
             type: 'post',
-            visibility: visibility
+            visibility: visibility,
+            email_recipient_filter: 'none'
         };
     },
 
@@ -65,6 +66,17 @@ Post = ghostBookshelf.Model.extend({
         tags: 'tags',
         authors: 'users',
         posts_meta: 'posts_meta'
+    },
+
+    relationsMeta: {
+        posts_meta: {
+            targetTableName: 'posts_meta',
+            foreignKey: 'post_id'
+        },
+        email: {
+            targetTableName: 'emails',
+            foreignKey: 'post_id'
+        }
     },
 
     /**
@@ -80,6 +92,42 @@ Post = ghostBookshelf.Model.extend({
         });
 
         return filteredKeys;
+    },
+
+    orderAttributes: function orderAttributes() {
+        let keys = ghostBookshelf.Model.prototype.orderAttributes.apply(this, arguments);
+
+        // extend ordered keys with post_meta keys
+        let postsMetaKeys = _.without(ghostBookshelf.model('PostsMeta').prototype.orderAttributes(), 'posts_meta.id', 'posts_meta.post_id');
+
+        return [...keys, ...postsMetaKeys];
+    },
+
+    orderRawQuery: function orderRawQuery(field, direction, withRelated) {
+        if (field === 'email.open_rate' && withRelated && withRelated.indexOf('email') > -1) {
+            return {
+                // *1.0 is needed on one of the columns to prevent sqlite from
+                // performing integer division rounding and always giving 0.
+                // Order by emails.track_opens desc first so we always tracked emails
+                // before untracked emails in the posts list.
+                orderByRaw: `
+                    emails.track_opens desc,
+                    emails.opened_count * 1.0 / emails.email_count * 100 ${direction},
+                    posts.created_at desc`,
+                eagerLoad: 'email.open_rate'
+            };
+        }
+    },
+
+    filterExpansions: function filterExpansions() {
+        const postsMetaKeys = _.without(ghostBookshelf.model('PostsMeta').prototype.orderAttributes(), 'posts_meta.id', 'posts_meta.post_id');
+
+        return postsMetaKeys.map((pmk) => {
+            return {
+                key: pmk.split('.')[1],
+                replacement: pmk
+            };
+        });
     },
 
     emitChange: function emitChange(event, options = {}) {
@@ -215,15 +263,15 @@ Post = ghostBookshelf.Model.extend({
          * For the reason above, `detached` handler is using the scope of `detaching`
          * to access the models that are not present in `detached`.
          */
-        model.related('tags').once('detaching', function onDetached(collection, tag) {
-            model.related('tags').once('detached', function onDetached(detachedCollection, response, options) {
+        model.related('tags').once('detaching', function detachingTags(collection, tag) {
+            model.related('tags').once('detached', function detachedTags(detachedCollection, response, options) {
                 tag.emitChange('detached', options);
                 model.emitChange('tag.detached', options);
             });
         });
 
-        model.related('tags').once('attaching', function onDetached(collection, tags) {
-            model.related('tags').once('attached', function onDetached(detachedCollection, response, options) {
+        model.related('tags').once('attaching', function tagsAttaching(collection, tags) {
+            model.related('tags').once('attached', function tagsAttached(detachedCollection, response, options) {
                 tags.forEach((tag) => {
                     tag.emitChange('attached', options);
                     model.emitChange('tag.attached', options);
@@ -231,14 +279,14 @@ Post = ghostBookshelf.Model.extend({
             });
         });
 
-        model.related('authors').once('detaching', function onDetached(collection, author) {
-            model.related('authors').once('detached', function onDetached(detachedCollection, response, options) {
+        model.related('authors').once('detaching', function authorsDetaching(collection, author) {
+            model.related('authors').once('detached', function authorsDetached(detachedCollection, response, options) {
                 author.emitChange('detached', options);
             });
         });
 
-        model.related('authors').once('attaching', function onDetached(collection, authors) {
-            model.related('authors').once('attached', function onDetached(detachedCollection, response, options) {
+        model.related('authors').once('attaching', function authorsAttaching(collection, authors) {
+            model.related('authors').once('attached', function authorsAttached(detachedCollection, response, options) {
                 authors.forEach(author => author.emitChange('attached', options));
             });
         });
@@ -260,7 +308,7 @@ Post = ghostBookshelf.Model.extend({
         });
     },
 
-    onSaving: function onSaving(model, attr, options) {
+    onSaving: async function onSaving(model, attr, options) {
         options = options || {};
 
         const self = this;
@@ -283,8 +331,8 @@ Post = ghostBookshelf.Model.extend({
         // CASE: disallow published -> scheduled
         // @TODO: remove when we have versioning based on updated_at
         if (newStatus !== olderStatus && newStatus === 'scheduled' && olderStatus === 'published') {
-            return Promise.reject(new common.errors.ValidationError({
-                message: common.i18n.t('errors.models.post.isAlreadyPublished', {key: 'status'})
+            return Promise.reject(new errors.ValidationError({
+                message: i18n.t('errors.models.post.isAlreadyPublished', {key: 'status'})
             }));
         }
 
@@ -297,12 +345,12 @@ Post = ghostBookshelf.Model.extend({
         // CASE: both page and post can get scheduled
         if (newStatus === 'scheduled') {
             if (!publishedAt) {
-                return Promise.reject(new common.errors.ValidationError({
-                    message: common.i18n.t('errors.models.post.valueCannotBeBlank', {key: 'published_at'})
+                return Promise.reject(new errors.ValidationError({
+                    message: i18n.t('errors.models.post.valueCannotBeBlank', {key: 'published_at'})
                 }));
             } else if (!moment(publishedAt).isValid()) {
-                return Promise.reject(new common.errors.ValidationError({
-                    message: common.i18n.t('errors.models.post.valueCannotBeBlank', {key: 'published_at'})
+                return Promise.reject(new errors.ValidationError({
+                    message: i18n.t('errors.models.post.valueCannotBeBlank', {key: 'published_at'})
                 }));
                 // CASE: to schedule/reschedule a post, a minimum diff of x minutes is needed (default configured is 2minutes)
             } else if (
@@ -311,8 +359,8 @@ Post = ghostBookshelf.Model.extend({
                 !options.importing &&
                 (!options.context || !options.context.internal)
             ) {
-                return Promise.reject(new common.errors.ValidationError({
-                    message: common.i18n.t('errors.models.post.expectedPublishedAtInFuture', {
+                return Promise.reject(new errors.ValidationError({
+                    message: i18n.t('errors.models.post.expectedPublishedAtInFuture', {
                         cannotScheduleAPostBeforeInMinutes: config.get('times').cannotScheduleAPostBeforeInMinutes
                     })
                 }));
@@ -388,28 +436,39 @@ Post = ghostBookshelf.Model.extend({
             }
         };
 
-        Object.entries(urlTransformMap).forEach(([attr, transform]) => {
+        Object.entries(urlTransformMap).forEach(([attrToTransform, transform]) => {
             let method = transform;
-            let options = {};
+            let transformOptions = {};
 
             if (typeof transform === 'object') {
                 method = transform.method;
-                options = transform.options || {};
+                transformOptions = transform.options || {};
             }
 
-            if (this.hasChanged(attr) && this.get(attr)) {
-                const transformedValue = urlUtils[method](this.get(attr), options);
-                this.set(attr, transformedValue);
+            if (this.hasChanged(attrToTransform) && this.get(attrToTransform)) {
+                const transformedValue = urlUtils[method](this.get(attrToTransform), transformOptions);
+                this.set(attrToTransform, transformedValue);
             }
         });
 
+        // If we're force re-rendering we want to make sure that all image cards
+        // have original dimensions stored in the payload for use by card renderers
+        if (options.force_rerender) {
+            this.set('mobiledoc', await mobiledocLib.populateImageSizes(this.get('mobiledoc')));
+        }
+
         // CASE: mobiledoc has changed, generate html
+        // CASE: ?force_rerender=true passed via Admin API
         // CASE: html is null, but mobiledoc exists (only important for migrations & importing)
-        if (this.hasChanged('mobiledoc') || (!this.get('html') && (options.migrating || options.importing))) {
+        if (
+            this.hasChanged('mobiledoc')
+            || options.force_rerender
+            || (!this.get('html') && (options.migrating || options.importing))
+        ) {
             try {
                 this.set('html', mobiledocLib.mobiledocHtmlRenderer.render(JSON.parse(this.get('mobiledoc'))));
             } catch (err) {
-                throw new common.errors.ValidationError({
+                throw new errors.ValidationError({
                     message: 'Invalid mobiledoc structure.',
                     help: 'https://ghost.org/docs/concepts/posts/'
                 });
@@ -417,14 +476,20 @@ Post = ghostBookshelf.Model.extend({
         }
 
         if (this.hasChanged('html') || !this.get('plaintext')) {
-            const plaintext = htmlToText.fromString(this.get('html'), {
-                wordwrap: 80,
-                ignoreImage: true,
-                hideLinkHrefIfSameAsText: true,
-                preserveNewlines: true,
-                returnDomByDefault: true,
-                uppercaseHeadings: false
-            });
+            let plaintext;
+
+            if (this.get('html') === null) {
+                plaintext = null;
+            } else {
+                plaintext = htmlToText.fromString(this.get('html'), {
+                    wordwrap: 80,
+                    ignoreImage: true,
+                    hideLinkHrefIfSameAsText: true,
+                    preserveNewlines: true,
+                    returnDomByDefault: true,
+                    uppercaseHeadings: false
+                });
+            }
 
             // CASE: html is e.g. <p></p>
             // @NOTE: Otherwise we will always update the resource to `plaintext: ''` and Bookshelf thinks that this
@@ -436,7 +501,7 @@ Post = ghostBookshelf.Model.extend({
 
         // disabling sanitization until we can implement a better version
         if (!options.importing) {
-            title = this.get('title') || common.i18n.t('errors.models.post.untitled');
+            title = this.get('title') || i18n.t('errors.models.post.untitled');
             this.set('title', _.toString(title).trim());
         }
 
@@ -459,19 +524,17 @@ Post = ghostBookshelf.Model.extend({
             }
         }
 
-        // send_email_when_published is read-only and should only be set using a query param when publishing/scheduling
-        if (options.send_email_when_published && this.hasChanged('status') && (newStatus === 'published' || newStatus === 'scheduled')) {
-            this.set('send_email_when_published', true);
+        // email_recipient_filter is read-only and should only be set using a query param when publishing/scheduling
+        if (options.email_recipient_filter && options.email_recipient_filter !== 'none' && this.hasChanged('status') && (newStatus === 'published' || newStatus === 'scheduled')) {
+            this.set('email_recipient_filter', options.email_recipient_filter);
         }
 
-        // ensure draft posts have the send_email_when_published reset unless an email has already been sent
+        // ensure draft posts have the email_recipient_filter reset unless an email has already been sent
         if (newStatus === 'draft' && this.hasChanged('status')) {
             ops.push(function ensureSendEmailWhenPublishedIsUnchanged() {
                 return self.related('email').fetch({transacting: options.transacting}).then((email) => {
-                    if (email) {
-                        self.set('send_email_when_published', true);
-                    } else {
-                        self.set('send_email_when_published', false);
+                    if (!email) {
+                        self.set('email_recipient_filter', 'none');
                     }
                 });
             });
@@ -487,7 +550,7 @@ Post = ghostBookshelf.Model.extend({
                         // After the new slug is found, do another generate for the old title to compare it to the old slug
                         return ghostBookshelf.Model.generateSlug(Post, prevTitle,
                             {status: 'all', transacting: options.transacting, importing: options.importing}
-                        ).then(function then(prevTitleSlug) {
+                        ).then(function prevTitleSlugGenerated(prevTitleSlug) {
                             // If the old slug is the same as the slug that was generated from the old title
                             // then set a new slug. If it is not the same, means was set by the user
                             if (prevTitleSlug === prevSlug) {
@@ -671,9 +734,26 @@ Post = ghostBookshelf.Model.extend({
 
         return attrs;
     },
+
+    // NOTE: overloads models base method to take `post_meta` changes into account
+    wasChanged() {
+        if (!this._changed) {
+            return true;
+        }
+
+        const postMetaChanged = this.relations.posts_meta && this.relations.posts_meta._changed && Object.keys(this.relations.posts_meta._changed).length;
+
+        if (!Object.keys(this._changed).length && !postMetaChanged) {
+            return false;
+        }
+
+        return true;
+    },
+
     enforcedFilters: function enforcedFilters(options) {
         return options.context && options.context.public ? 'status:published' : null;
     },
+
     defaultFilters: function defaultFilters(options) {
         if (options.context && options.context.internal) {
             return null;
@@ -780,7 +860,7 @@ Post = ghostBookshelf.Model.extend({
             findPage: ['status'],
             findAll: ['columns', 'filter'],
             destroy: ['destroyAll', 'destroyBy'],
-            edit: ['filter', 'send_email_when_published']
+            edit: ['filter', 'email_recipient_filter', 'force_rerender']
         };
 
         // The post model additionally supports having a formats option
@@ -873,6 +953,13 @@ Post = ghostBookshelf.Model.extend({
                                 // Pass along the updated attributes for checking status changes
                                 found._previousAttributes = post._previousAttributes;
                                 found._changed = post._changed;
+
+                                // NOTE: `posts_meta` fields are equivalent in terms of "wasChanged" logic to the rest of posts's table fields.
+                                //       Keeping track of them is needed to check if anything was changed in post's resource.
+                                if (found.relations.posts_meta) {
+                                    found.relations.posts_meta._changed = post.relations.posts_meta._changed;
+                                }
+
                                 return found;
                             }
                         });
@@ -995,8 +1082,8 @@ Post = ghostBookshelf.Model.extend({
             return Promise.resolve({excludedAttrs});
         }
 
-        return Promise.reject(new common.errors.NoPermissionError({
-            message: common.i18n.t('errors.models.post.notEnoughPermission')
+        return Promise.reject(new errors.NoPermissionError({
+            message: i18n.t('errors.models.post.notEnoughPermission')
         }));
     }
 });

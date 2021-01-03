@@ -1,5 +1,5 @@
-const models = require('../../models');
-const common = require('../../lib/common');
+const {i18n} = require('../../lib/common');
+const errors = require('@tryghost/errors');
 const membersService = require('../../services/members');
 
 module.exports = {
@@ -11,15 +11,15 @@ module.exports = {
         ],
         permissions: true,
         async query(frame) {
-            let model = await models.Member.findOne(frame.data, frame.options);
+            let model = await membersService.api.members.get(frame.data, frame.options);
 
             if (!model) {
-                throw new common.errors.NotFoundError({
-                    message: common.i18n.t('errors.api.members.memberNotFound')
+                throw new errors.NotFoundError({
+                    message: i18n.t('errors.api.members.memberNotFound')
                 });
             }
 
-            const magicLink = membersService.api.getMagicLink(model.get('email'));
+            const magicLink = await membersService.api.getMagicLink(model.get('email'));
 
             return {
                 member_id: model.get('id'),

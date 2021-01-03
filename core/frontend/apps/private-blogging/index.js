@@ -1,5 +1,7 @@
-const urlUtils = require('../../../server/lib/url-utils');
-const common = require('../../../server/lib/common');
+const {i18n} = require('../../services/proxy');
+const urlUtils = require('../../../shared/url-utils');
+const logging = require('../../../shared/logging');
+const errors = require('@tryghost/errors');
 const middleware = require('./lib/middleware');
 const router = require('./lib/router');
 const registerHelpers = require('./lib/helpers');
@@ -14,10 +16,10 @@ let checkSubdir = function checkSubdir() {
         paths = urlUtils.getSubdir().split('/');
 
         if (paths.pop() === PRIVATE_KEYWORD) {
-            common.logging.error(new common.errors.GhostError({
-                message: common.i18n.t('errors.config.urlCannotContainPrivateSubdir.error'),
-                context: common.i18n.t('errors.config.urlCannotContainPrivateSubdir.description'),
-                help: common.i18n.t('errors.config.urlCannotContainPrivateSubdir.help')
+            logging.error(new errors.GhostError({
+                message: i18n.t('errors.config.urlCannotContainPrivateSubdir.error'),
+                context: i18n.t('errors.config.urlCannotContainPrivateSubdir.description'),
+                help: i18n.t('errors.config.urlCannotContainPrivateSubdir.help')
             }));
 
             // @TODO: why
@@ -40,5 +42,9 @@ module.exports = {
     setupMiddleware: function setupMiddleware(siteApp) {
         siteApp.use(middleware.checkIsPrivate);
         siteApp.use(middleware.filterPrivateRoutes);
+    },
+
+    setupErrorHandling: function setupErrorHandling(siteApp) {
+        siteApp.use(middleware.handle404);
     }
 };

@@ -6,9 +6,7 @@ const _ = require('lodash');
 
 const Promise = require('bluebird');
 const ObjectId = require('bson-objectid');
-const common = require('../../lib/common');
-let attach;
-let detach;
+const errors = require('@tryghost/errors');
 
 /**
  * Attach wrapper (please never call attach manual!)
@@ -23,7 +21,7 @@ let detach;
  * roles [{role_id: 1}]
  * roles [BookshelfModel]
  */
-attach = function attach(Model, effectedModelId, relation, modelsToAttach, options) {
+const attach = function attach(Model, effectedModelId, relation, modelsToAttach, options) {
     options = options || {};
 
     let fetchedModel;
@@ -34,7 +32,7 @@ attach = function attach(Model, effectedModelId, relation, modelsToAttach, optio
             fetchedModel = _fetchedModel;
 
             if (!fetchedModel) {
-                throw new common.errors.NotFoundError({level: 'critical', help: effectedModelId});
+                throw new errors.NotFoundError({level: 'critical', help: effectedModelId});
             }
 
             fetchedModel.related(relation).on('creating', function (collection, data) {
@@ -65,7 +63,7 @@ attach = function attach(Model, effectedModelId, relation, modelsToAttach, optio
         });
 };
 
-detach = function detach(Model, effectedModelId, relation, modelsToAttach, options) {
+const detach = function detach(Model, effectedModelId, relation, modelsToAttach, options) {
     options = options || {};
 
     let fetchedModel;
@@ -76,7 +74,7 @@ detach = function detach(Model, effectedModelId, relation, modelsToAttach, optio
             fetchedModel = _fetchedModel;
 
             if (!fetchedModel) {
-                throw new common.errors.NotFoundError({level: 'critical', help: effectedModelId});
+                throw new errors.NotFoundError({level: 'critical', help: effectedModelId});
             }
 
             return Promise.resolve(modelsToAttach)

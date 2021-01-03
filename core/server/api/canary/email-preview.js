@@ -1,5 +1,6 @@
 const models = require('../../models');
-const common = require('../../lib/common');
+const {i18n} = require('../../lib/common');
+const errors = require('@tryghost/errors');
 const mega = require('../../services/mega');
 
 module.exports = {
@@ -25,21 +26,22 @@ module.exports = {
             return models.Post.findOne(data, options)
                 .then((model) => {
                     if (!model) {
-                        throw new common.errors.NotFoundError({
-                            message: common.i18n.t('errors.api.posts.postNotFound')
+                        throw new errors.NotFoundError({
+                            message: i18n.t('errors.api.posts.postNotFound')
                         });
                     }
 
-                    return mega.postEmailSerializer.serialize(model, {isBrowserPreview: true}).then(({emailTmpl, replacements}) => {
-                        // perform replacements using no member data
+                    return mega.postEmailSerializer.serialize(model, {isBrowserPreview: true}).then((emailContent) => {
+                        const replacements = mega.postEmailSerializer.parseReplacements(emailContent);
+
                         replacements.forEach((replacement) => {
-                            emailTmpl[replacement.format] = emailTmpl[replacement.format].replace(
+                            emailContent[replacement.format] = emailContent[replacement.format].replace(
                                 replacement.match,
                                 replacement.fallback || ''
                             );
                         });
 
-                        return emailTmpl;
+                        return emailContent;
                     });
                 });
         }
@@ -62,15 +64,17 @@ module.exports = {
             const options = Object.assign(frame.options, {status: 'all'});
             let model = await models.Post.findOne(options, {withRelated: ['authors']});
             if (!model) {
-                throw new common.errors.NotFoundError({
-                    message: common.i18n.t('errors.api.posts.postNotFound')
+                throw new errors.NotFoundError({
+                    message: i18n.t('errors.api.posts.postNotFound')
                 });
             }
             const {emails = []} = frame.data;
             const response = await mega.mega.sendTestEmail(model, emails);
             if (response && response[0] && response[0].error) {
-                throw new common.errors.EmailError({
-                    message: response[0].error.message
+                throw new errors.EmailError({
+                    statusCode: response[0].error.statusCode,
+                    message: response[0].error.message,
+                    context: response[0].error.originalMessage
                 });
             }
             return response;

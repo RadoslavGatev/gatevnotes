@@ -1,6 +1,6 @@
 const cloneDeep = require('lodash/cloneDeep');
-const config = require('../../../config');
-const {logging} = require('../../../lib/common');
+const config = require('../../../../shared/config');
+const logging = require('../../../../shared/logging');
 const imageTransform = require('@tryghost/image-transform');
 
 module.exports = function normalize(req, res, next) {
@@ -18,7 +18,7 @@ module.exports = function normalize(req, res, next) {
         in: originalPath,
         out,
         ext: req.file.ext,
-        width: 2000
+        width: config.get('imageOptimization:defaultMaxWidth')
     }, imageOptimizationOptions);
 
     imageTransform.resizeFromPath(options)

@@ -6,7 +6,7 @@ const _ = require('lodash');
 
 const path = require('path');
 const url = require('url');
-const config = require('../../../../server/config');
+const config = require('../../../../shared/config');
 const themes = require('../../themes');
 const _private = {};
 
@@ -119,12 +119,12 @@ _private.pickTemplate = function pickTemplate(templateList, fallback) {
     if (!themes.getActive()) {
         template = fallback;
     } else {
-        template = _.find(templateList, function (template) {
-            if (!template) {
+        template = _.find(templateList, function (templateName) {
+            if (!templateName) {
                 return;
             }
 
-            return themes.getActive().hasTemplate(template);
+            return themes.getActive().hasTemplate(templateName);
         });
     }
 

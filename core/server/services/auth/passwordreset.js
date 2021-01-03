@@ -1,10 +1,10 @@
 const _ = require('lodash');
-const security = require('../../lib/security');
-const constants = require('../../lib/constants');
+const security = require('@tryghost/security');
+const constants = require('@tryghost/constants');
 const errors = require('@tryghost/errors');
 const {i18n} = require('../../lib/common');
 const models = require('../../models');
-const urlUtils = require('../../lib/url-utils');
+const urlUtils = require('../../../shared/url-utils');
 const mail = require('../mail');
 
 const tokenSecurity = {};
@@ -48,7 +48,9 @@ function extractTokenParts(options) {
 
     if (!tokenParts) {
         return Promise.reject(new errors.UnauthorizedError({
-            message: i18n.t('errors.api.common.invalidTokenStructure')
+            message: i18n.t('errors.api.passwordReset.corruptedToken.message'),
+            context: i18n.t('errors.api.passwordReset.corruptedToken.context'),
+            help: i18n.t('errors.api.passwordReset.corruptedToken.help')
         }));
     }
 
@@ -86,16 +88,29 @@ function doReset(options, tokenParts, settingsAPI) {
                 throw new errors.NotFoundError({message: i18n.t('errors.api.users.userNotFound')});
             }
 
-            let tokenIsCorrect = security.tokens.resetToken.compare({
+            let compareResult = security.tokens.resetToken.compare({
                 token: resetToken,
                 dbHash: dbHash,
                 password: user.get('password')
             });
 
-            if (!tokenIsCorrect) {
-                return Promise.reject(new errors.BadRequestError({
-                    message: i18n.t('errors.api.common.invalidTokenStructure')
-                }));
+            if (!compareResult.correct) {
+                let error;
+                if (compareResult.reason === 'expired' || compareResult.reason === 'invalid_expiry') {
+                    error = new errors.BadRequestError({
+                        message: i18n.t('errors.api.passwordReset.expired.message'),
+                        context: i18n.t('errors.api.passwordReset.expired.context'),
+                        help: i18n.t('errors.api.passwordReset.expired.help')
+                    });
+                } else {
+                    error = new errors.BadRequestError({
+                        message: i18n.t('errors.api.passwordReset.invalidToken.message'),
+                        context: i18n.t('errors.api.passwordReset.invalidToken.context'),
+                        help: i18n.t('errors.api.passwordReset.invalidToken.help')
+                    });
+                }
+
+                return Promise.reject(error);
             }
 
             return models.User.changePassword({
@@ -123,12 +138,10 @@ async function sendResetNotification(data, mailAPI) {
     const adminUrl = urlUtils.urlFor('admin', true);
     const resetToken = security.url.encodeBase64(data.resetToken);
     const resetUrl = urlUtils.urlJoin(adminUrl, 'reset', resetToken, '/');
-    const resetLink = urlUtils.urlJoin(adminUrl, 'reset', `${resetToken.slice(0, 5)}...`);
 
     const content = await mail.utils.generateContent({
         data: {
-            resetUrl,
-            resetLink
+            resetUrl
         },
         template: 'reset-password'
     });

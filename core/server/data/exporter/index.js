@@ -3,32 +3,16 @@ const Promise = require('bluebird');
 const db = require('../../data/db');
 const commands = require('../schema').commands;
 const ghostVersion = require('../../lib/ghost-version');
-const common = require('../../lib/common');
-const security = require('../../lib/security');
+const {i18n} = require('../../lib/common');
+const logging = require('../../../shared/logging');
+const errors = require('@tryghost/errors');
+const security = require('@tryghost/security');
 const models = require('../../models');
 const EXCLUDED_TABLES = ['sessions', 'mobiledoc_revisions'];
 
-const EXCLUDED_FIELDS_CONDITIONS = {
-    settings: [{
-        operator: 'whereNot',
-        key: 'key',
-        value: 'permalinks'
-    }]
-};
-
 const modelOptions = {context: {internal: true}};
 
-// private
-let getVersionAndTables;
-
-let exportTable;
-
-// public
-let doExport;
-
-let exportFileName;
-
-exportFileName = function exportFileName(options) {
+const exportFileName = function exportFileName(options) {
     const datetime = require('moment')().format('YYYY-MM-DD-HH-mm-ss');
     let title = '';
 
@@ -46,12 +30,12 @@ exportFileName = function exportFileName(options) {
 
         return title + 'ghost.' + datetime + '.json';
     }).catch(function (err) {
-        common.logging.error(new common.errors.GhostError({err: err}));
+        logging.error(new errors.GhostError({err: err}));
         return 'ghost.' + datetime + '.json';
     });
 };
 
-getVersionAndTables = function getVersionAndTables(options) {
+const getVersionAndTables = function getVersionAndTables(options) {
     const props = {
         version: ghostVersion.full,
         tables: commands.getTables(options.transacting)
@@ -60,22 +44,16 @@ getVersionAndTables = function getVersionAndTables(options) {
     return Promise.props(props);
 };
 
-exportTable = function exportTable(tableName, options) {
+const exportTable = function exportTable(tableName, options) {
     if (EXCLUDED_TABLES.indexOf(tableName) < 0 ||
         (options.include && _.isArray(options.include) && options.include.indexOf(tableName) !== -1)) {
         const query = (options.transacting || db.knex)(tableName);
-
-        if (EXCLUDED_FIELDS_CONDITIONS[tableName]) {
-            EXCLUDED_FIELDS_CONDITIONS[tableName].forEach((condition) => {
-                query[condition.operator](condition.key, condition.value);
-            });
-        }
 
         return query.select();
     }
 };
 
-doExport = function doExport(options) {
+const doExport = function doExport(options) {
     options = options || {include: []};
 
     let tables;
@@ -105,9 +83,9 @@ doExport = function doExport(options) {
 
         return exportData;
     }).catch(function (err) {
-        return Promise.reject(new common.errors.DataExportError({
+        return Promise.reject(new errors.DataExportError({
             err: err,
-            context: common.i18n.t('errors.data.export.errorExportingData')
+            context: i18n.t('errors.data.export.errorExportingData')
         }));
     });
 };

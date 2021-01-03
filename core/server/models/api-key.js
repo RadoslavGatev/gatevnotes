@@ -1,5 +1,6 @@
 const omit = require('lodash/omit');
-const common = require('../lib/common');
+const logging = require('../../shared/logging');
+const errors = require('@tryghost/errors');
 const _ = require('lodash');
 const crypto = require('crypto');
 const ghostBookshelf = require('./base');
@@ -38,10 +39,10 @@ const addAction = (model, event, options) => {
         return;
     }
 
-    const action = model.getAction(event, options);
+    const existingAction = model.getAction(event, options);
 
     // CASE: model does not support action for target event
-    if (!action) {
+    if (!existingAction) {
         return;
     }
 
@@ -53,7 +54,7 @@ const addAction = (model, event, options) => {
                     err = err[0];
                 }
 
-                common.logging.error(new common.errors.InternalServerError({
+                logging.error(new errors.InternalServerError({
                     err
                 }));
             });
@@ -65,10 +66,10 @@ const addAction = (model, event, options) => {
                 return;
             }
 
-            insert(action);
+            insert(existingAction);
         });
     } else {
-        insert(action);
+        insert(existingAction);
     }
 };
 
@@ -89,6 +90,10 @@ const ApiKey = ghostBookshelf.Model.extend({
 
     integration() {
         return this.belongsTo('Integration');
+    },
+
+    user() {
+        return this.belongsTo('User');
     },
 
     format(attrs) {

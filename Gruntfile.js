@@ -8,7 +8,7 @@
 
 require('./core/server/overrides');
 
-const config = require('./core/server/config');
+const config = require('./core/shared/config');
 const urlService = require('./core/frontend/services/url');
 const _ = require('lodash');
 const fs = require('fs-extra');
@@ -40,13 +40,22 @@ const configureGrunt = function (grunt) {
     grunt.loadNpmTasks('grunt-contrib-compress');
     grunt.loadNpmTasks('grunt-contrib-copy');
     grunt.loadNpmTasks('grunt-contrib-symlink');
-    grunt.loadNpmTasks('grunt-contrib-uglify');
     grunt.loadNpmTasks('grunt-contrib-watch');
     grunt.loadNpmTasks('grunt-express-server');
     grunt.loadNpmTasks('grunt-mocha-cli');
     grunt.loadNpmTasks('grunt-shell');
     grunt.loadNpmTasks('grunt-subgrunt');
     grunt.loadNpmTasks('grunt-update-submodules');
+
+    /** This little bit of weirdness gives the express server chance to shutdown properly */
+    const waitBeforeExit = () => {
+        setTimeout(() => {
+            process.exit(0);
+        }, 1000);
+    };
+
+    process.on('SIGINT', waitBeforeExit);
+    process.on('SIGTERM', waitBeforeExit);
 
     const cfg = {
         // #### Common paths used by tasks
@@ -126,9 +135,7 @@ const configureGrunt = function (grunt) {
                 ui: 'bdd',
                 reporter: grunt.option('reporter') || 'spec',
                 timeout: '60000',
-                save: grunt.option('reporter-output'),
                 require: ['core/server/overrides'],
-                retries: '3',
                 exit: true
             },
 
@@ -216,7 +223,7 @@ const configureGrunt = function (grunt) {
                         git submodule update
 
                         if ! git diff --exit-code --quiet --ignore-submodules=untracked; then
-                            echo "Working directory is not clean, do you have uncommited changes? Please commit, stash or discard changes to continue."
+                            echo "Working directory is not clean, do you have uncommitted changes? Please commit, stash or discard changes to continue."
                             exit 1
                         fi
 
@@ -272,17 +279,6 @@ const configureGrunt = function (grunt) {
             pinned: {
                 options: {
                     params: '--init'
-                }
-            }
-        },
-
-        uglify: {
-            prod: {
-                options: {
-                    sourceMap: false
-                },
-                files: {
-                    'core/server/public/members.min.js': 'core/server/public/members.js'
                 }
             }
         },
@@ -540,7 +536,7 @@ const configureGrunt = function (grunt) {
     //
     // It is otherwise the same as running `grunt`, but is only used when running Ghost in the `production` env.
     grunt.registerTask('prod', 'Build JS & templates for production',
-        ['subgrunt:prod', 'uglify:prod', 'postcss:prod']);
+        ['subgrunt:prod', 'postcss:prod']);
 
     // ### Live reload
     // `grunt dev` - build assets on the fly whilst developing
@@ -606,9 +602,13 @@ const configureGrunt = function (grunt) {
                 }]
             });
 
+            if (!grunt.option('skip-update')) {
+                grunt.task
+                    .run('update_submodules:pinned')
+                    .run('subgrunt:init');
+            }
+
             grunt.task
-                .run('update_submodules:pinned')
-                .run('subgrunt:init')
                 .run('clean:built')
                 .run('clean:tmp')
                 .run('prod')

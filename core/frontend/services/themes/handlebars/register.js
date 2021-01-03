@@ -1,11 +1,12 @@
 const Promise = require('bluebird');
+const errors = require('@tryghost/errors');
 const hbs = require('../engine');
-const config = require('../../../../server/config');
-const {errors, logging} = require('../../../../server/lib/common');
+const config = require('../../../../shared/config');
+const logging = require('../../../../shared/logging');
 
 // Register an async handlebars helper for a given handlebars instance
-function asyncHelperWrapper(hbs, name, fn) {
-    hbs.registerAsyncHelper(name, function returnAsync(context, options, cb) {
+function asyncHelperWrapper(hbsInstance, name, fn) {
+    hbsInstance.registerAsyncHelper(name, function returnAsync(context, options, cb) {
         // Handle the case where we only get context and cb
         if (!cb) {
             cb = options;
@@ -28,7 +29,7 @@ function asyncHelperWrapper(hbs, name, fn) {
 
             logging.error(wrappedErr);
 
-            cb(new hbs.SafeString(result));
+            cb(new hbsInstance.SafeString(result));
         });
     });
 }

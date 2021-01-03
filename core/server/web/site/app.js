@@ -6,11 +6,11 @@ const {URL} = require('url');
 const errors = require('@tryghost/errors');
 
 // App requires
-const config = require('../../config');
-const constants = require('../../lib/constants');
+const config = require('../../../shared/config');
+const constants = require('@tryghost/constants');
 const storage = require('../../adapters/storage');
 const urlService = require('../../../frontend/services/url');
-const urlUtils = require('../../lib/url-utils');
+const urlUtils = require('../../../shared/url-utils');
 const sitemapHandler = require('../../../frontend/services/sitemap/handler');
 const appService = require('../../../frontend/services/apps');
 const themeService = require('../../../frontend/services/themes');
@@ -31,7 +31,7 @@ const corsOptionsDelegate = function corsOptionsDelegate(req, callback) {
         credentials: true // required to allow admin-client to login to private sites
     };
 
-    if (!origin) {
+    if (!origin || origin === 'null') {
         return callback(null, corsOptions);
     }
 
@@ -96,14 +96,6 @@ module.exports = function setupSiteApp(options = {}) {
     // Favicon
     siteApp.use(mw.serveFavicon());
 
-    // /public/members.js
-    siteApp.get('/public/members.js', shared.middlewares.labs.members,
-        mw.servePublicFile('public/members.js', 'application/javascript', constants.ONE_YEAR_S));
-
-    // /public/members.min.js
-    siteApp.get('/public/members.min.js', shared.middlewares.labs.members,
-        mw.servePublicFile('public/members.min.js', 'application/javascript', constants.ONE_YEAR_S));
-
     // Serve sitemap.xsl file
     siteApp.use(mw.servePublicFile('sitemap.xsl', 'text/xsl', constants.ONE_DAY_S));
 
@@ -135,13 +127,6 @@ module.exports = function setupSiteApp(options = {}) {
     siteApp.use(themeMiddleware);
     debug('Themes done');
 
-    // Theme static assets/files
-    siteApp.use(mw.staticTheme());
-    debug('Static content done');
-
-    // Serve robots.txt if not found in theme
-    siteApp.use(mw.servePublicFile('robots.txt', 'text/plain', constants.ONE_HOUR_S));
-
     // setup middleware for internal apps
     // @TODO: refactor this to be a proper app middleware hook for internal apps
     config.get('apps:internal').forEach((appName) => {
@@ -151,6 +136,13 @@ module.exports = function setupSiteApp(options = {}) {
             app.setupMiddleware(siteApp);
         }
     });
+
+    // Theme static assets/files
+    siteApp.use(mw.staticTheme());
+    debug('Static content done');
+
+    // Serve robots.txt if not found in theme
+    siteApp.use(mw.servePublicFile('robots.txt', 'text/plain', constants.ONE_HOUR_S));
 
     // site map - this should probably be refactored to be an internal app
     sitemapHandler(siteApp);
@@ -183,6 +175,13 @@ module.exports = function setupSiteApp(options = {}) {
 
     // ### Error handlers
     siteApp.use(shared.middlewares.errorHandler.pageNotFound);
+    config.get('apps:internal').forEach((appName) => {
+        const app = require(path.join(config.get('paths').internalAppPath, appName));
+
+        if (Object.prototype.hasOwnProperty.call(app, 'setupErrorHandling')) {
+            app.setupErrorHandling(siteApp);
+        }
+    });
     siteApp.use(shared.middlewares.errorHandler.handleThemeResponse);
 
     debug('Site setup end');

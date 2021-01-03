@@ -6,7 +6,7 @@ const gating = require('./post-gating');
 const clean = require('./clean');
 const extraAttrs = require('./extra-attrs');
 const postsMetaSchema = require('../../../../../../data/schema').tables.posts_meta;
-const config = require('../../../../../../config');
+const mega = require('../../../../../../services/mega');
 
 const mapUser = (model, frame) => {
     const jsonModel = model.toJSON ? model.toJSON(frame.options) : model;
@@ -47,6 +47,14 @@ const mapPost = (model, frame) => {
         gating.forPost(jsonModel, frame);
     }
 
+    if (typeof jsonModel.email_recipient_filter === 'undefined') {
+        jsonModel.send_email_when_published = null;
+    } else if (jsonModel.email_recipient_filter === 'none') {
+        jsonModel.send_email_when_published = false;
+    } else {
+        jsonModel.send_email_when_published = true;
+    }
+
     clean.post(jsonModel, frame);
 
     if (frame.options && frame.options.withRelated) {
@@ -60,6 +68,10 @@ const mapPost = (model, frame) => {
 
             if (relation === 'authors' && jsonModel.authors) {
                 jsonModel.authors = jsonModel.authors.map(author => mapUser(author, frame));
+            }
+
+            if (relation === 'email' && jsonModel.email) {
+                jsonModel.email = mapEmail(jsonModel.email, frame);
             }
 
             if (relation === 'email' && _.isEmpty(jsonModel.email)) {
@@ -85,6 +97,7 @@ const mapPage = (model, frame) => {
 
     delete jsonModel.email_subject;
     delete jsonModel.send_email_when_published;
+    delete jsonModel.email_recipient_filter;
 
     return jsonModel;
 };
@@ -92,7 +105,6 @@ const mapPage = (model, frame) => {
 const mapSettings = (attrs, frame) => {
     url.forSettings(attrs);
     extraAttrs.forSettings(attrs, frame);
-    clean.settings(attrs, frame);
 
     // NOTE: The cleanup of deprecated ghost_head/ghost_foot has to happen here
     //       because codeinjection_head/codeinjection_foot are assigned on a previous
@@ -100,17 +112,8 @@ const mapSettings = (attrs, frame) => {
     //      fields completely.
     if (_.isArray(attrs)) {
         attrs = _.filter(attrs, (o) => {
-            if (o.key === 'brand' && !config.get('enableDeveloperExperiments')) {
-                return false;
-            }
             return o.key !== 'ghost_head' && o.key !== 'ghost_foot';
         });
-    } else {
-        delete attrs.ghost_head;
-        delete attrs.ghost_foot;
-        if (!config.get('enableDeveloperExperiments')) {
-            delete attrs.brand;
-        }
     }
 
     return attrs;
@@ -140,25 +143,24 @@ const mapAction = (model, frame) => {
     return attrs;
 };
 
-const mapMember = (model, frame) => {
+const mapLabel = (model, frame) => {
     const jsonModel = model.toJSON ? model.toJSON(frame.options) : model;
-
-    if (_.get(jsonModel, 'stripe.subscriptions')) {
-        let compedSubscriptions = _.get(jsonModel, 'stripe.subscriptions').filter(sub => (sub.plan.nickname === 'Complimentary'));
-        const hasCompedSubscription = !!(compedSubscriptions.length);
-
-        // NOTE: `frame.options.fields` has to be taken into account in the same way as for `stripe.subscriptions`
-        //       at the moment of implementation fields were not fully supported by members endpoints
-        Object.assign(jsonModel, {
-            comped: hasCompedSubscription
-        });
-    }
-
     return jsonModel;
 };
 
-const mapLabel = (model, frame) => {
+const mapEmail = (model, frame) => {
     const jsonModel = model.toJSON ? model.toJSON(frame.options) : model;
+
+    // Ensure we're not outputting unwanted replacement strings when viewing email contents
+    // TODO: extract this to a utility, it's duplicated in the email-preview API controller
+    const replacements = mega.postEmailSerializer.parseReplacements(jsonModel);
+    replacements.forEach((replacement) => {
+        jsonModel[replacement.format] = jsonModel[replacement.format].replace(
+            replacement.match,
+            replacement.fallback || ''
+        );
+    });
+
     return jsonModel;
 };
 
@@ -171,4 +173,4 @@ module.exports.mapIntegration = mapIntegration;
 module.exports.mapSettings = mapSettings;
 module.exports.mapImage = mapImage;
 module.exports.mapAction = mapAction;
-module.exports.mapMember = mapMember;
+module.exports.mapEmail = mapEmail;

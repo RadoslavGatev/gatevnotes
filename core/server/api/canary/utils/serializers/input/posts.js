@@ -1,7 +1,8 @@
 const _ = require('lodash');
 const debug = require('ghost-ignition').debug('api:canary:utils:serializers:input:posts');
-const mapNQLKeyValues = require('../../../../../../shared/nql-map-key-values');
+const mapNQLKeyValues = require('@nexes/nql').utils.mapKeyValues;
 const url = require('./utils/url');
+const slugFilterOrder = require('./utils/slug-filter-order');
 const localUtils = require('../../index');
 const mobiledoc = require('../../../../../lib/mobiledoc');
 const postsMetaSchema = require('../../../../../data/schema').tables.posts_meta;
@@ -48,7 +49,11 @@ function setDefaultOrder(frame) {
         includesOrderedRelations = _.intersection(orderedRelations, frame.options.withRelated).length > 0;
     }
 
-    if (!frame.options.order && !includesOrderedRelations) {
+    if (!frame.options.order && !includesOrderedRelations && frame.options.filter) {
+        frame.options.autoOrder = slugFilterOrder('posts', frame.options.filter);
+    }
+
+    if (!frame.options.order && !frame.options.autoOrder && !includesOrderedRelations) {
         frame.options.order = 'published_at desc';
     }
 }
@@ -103,6 +108,10 @@ module.exports = {
 
         forcePageFilter(frame);
 
+        if (frame.options.columns && frame.options.columns.includes('send_email_when_published')) {
+            frame.options.columns.push('email_recipient_filter');
+        }
+
         /**
          * ## current cases:
          * - context object is empty (functional call, content api access)
@@ -130,6 +139,10 @@ module.exports = {
         debug('read');
 
         forcePageFilter(frame);
+
+        if (frame.options.columns && frame.options.columns.includes('send_email_when_published')) {
+            frame.options.columns.push('email_recipient_filter');
+        }
 
         /**
          * ## current cases:

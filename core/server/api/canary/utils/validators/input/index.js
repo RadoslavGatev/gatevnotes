@@ -49,5 +49,13 @@ module.exports = {
 
     get oembed() {
         return require('./oembed');
+    },
+
+    get webhooks() {
+        return require('./webhooks');
+    },
+
+    get snippets() {
+        return require('./snippets');
     }
 };
