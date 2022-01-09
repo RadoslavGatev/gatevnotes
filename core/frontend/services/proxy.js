@@ -1,72 +1,51 @@
-// This file defines everything that helpers "require"
-// With the exception of modules like lodash, Bluebird
-// We can later refactor to enforce this something like we did in apps
-const hbs = require('./themes/engine');
-const errors = require('@tryghost/errors');
-
-const {i18n} = require('../../server/lib/common');
-const logging = require('../../shared/logging');
-const settingsCache = require('../../server/services/settings/cache');
+// This file contains everything that the helpers and frontend apps require from the core of Ghost
+const settingsCache = require('../../shared/settings-cache');
 const config = require('../../shared/config');
 
-// Direct requires:
-// - lodash
-// - bluebird
-// - downsize
-// - moment-timezone
-// - jsonpath
+// Require from the rendering framework
+const {SafeString} = require('./rendering');
 
 module.exports = {
-    hbs: hbs,
-    SafeString: hbs.SafeString,
-    escapeExpression: hbs.escapeExpression,
-
-    // TODO: Expose less of the API to make this safe
-    api: require('../../server/api'),
-
-    // TODO: Only expose "get"
-    settingsCache: settingsCache,
-
-    // These 3 are kind of core and required all the time
-    errors,
-    i18n,
-    logging,
-
-    // Theme i18n is separate to common i18n
-    themeI18n: require('./themes/i18n'),
-
-    // This is used to detect if "isPost" is true in prevNext.
+    /**
+     * Section two: data manipulation
+     * Stuff that modifies API data (SDK layer)
+     */
+    metaData: require('../meta'),
+    socialUrls: require('@tryghost/social-urls'),
+    blogIcon: require('../../server/lib/image').blogIcon,
+    // Used by router service and {{get}} helper to prepare data for optimal usage in themes
+    prepareContextResource(data) {
+        (Array.isArray(data) ? data : [data]).forEach((resource) => {
+            // feature_image_caption contains HTML, making it a SafeString spares theme devs from triple-curlies
+            if (resource.feature_image_caption) {
+                resource.feature_image_caption = new SafeString(resource.feature_image_caption);
+            }
+        });
+    },
+    // This is used to decide e.g. if a JSON object is a Post, Page, Tag etc
     checks: require('../../server/data/schema').checks,
 
-    // Config!
-    // Keys used:
+    /**
+     * Section three: Core API
+     * Parts of Ghost core that the frontend currently needs
+     */
+
+    // Config! Keys used:
     // isPrivacyDisabled & referrerPolicy used in ghost_head
     config: {
         get: config.get.bind(config),
         isPrivacyDisabled: config.isPrivacyDisabled.bind(config)
     },
 
+    // TODO: Only expose "get"
+    settingsCache: settingsCache,
+
+    // TODO: Expose less of the API to make this safe
+    api: require('../../server/api'),
+
     // Labs utils for enabling/disabling helpers
-    labs: require('../../server/services/labs'),
-
-    // Things required from data/meta
-    metaData: {
-        get: require('../meta'), // ghost_head
-        getAssetUrl: require('../meta/asset_url'), // asset
-        getMetaDataExcerpt: require('../meta/excerpt'), // excerpt
-        getMetaDataDescription: require('../meta/description'), // meta_desc
-        getMetaDataTitle: require('../meta/title'), // meta_title
-        getPaginatedUrl: require('../meta/paginated_url'), // page_url
-        getMetaDataUrl: require('../meta/url') // url
-    },
-
-    // The local template thing, should this be merged with the channels one?
-    templates: require('./themes/handlebars/template'),
-
-    // Various utils, needs cleaning up / simplifying
-    socialUrls: require('@tryghost/social-urls'),
-    blogIcon: require('../../server/lib/image').blogIcon,
-    urlService: require('./url'),
-    urlUtils: require('../../shared/url-utils'),
-    localUtils: require('./themes/handlebars/utils')
+    labs: require('../../shared/labs'),
+    // URGH... Yuk (unhelpful comment :D)
+    urlService: require('../../server/services/url'),
+    urlUtils: require('../../shared/url-utils')
 };

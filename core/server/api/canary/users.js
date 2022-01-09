@@ -1,18 +1,27 @@
-const path = require('path');
 const Promise = require('bluebird');
-const {i18n} = require('../../lib/common');
+const tpl = require('@tryghost/tpl');
 const errors = require('@tryghost/errors');
-const dbBackup = require('../../data/db/backup');
 const models = require('../../models');
 const permissionsService = require('../../services/permissions');
+const dbBackup = require('../../data/db/backup');
+const auth = require('../../services/auth');
+const apiMail = require('./index').mail;
+const apiSettings = require('./index').settings;
+const UsersService = require('../../services/users');
+const userService = new UsersService({dbBackup, models, auth, apiMail, apiSettings});
 const ALLOWED_INCLUDES = ['count.posts', 'permissions', 'roles', 'roles.permissions'];
 const UNSAFE_ATTRS = ['status', 'roles'];
+
+const messages = {
+    noPermissionToAction: 'You do not have permission to perform this action',
+    userNotFound: 'User not found.'
+};
 
 function permissionOnlySelf(frame) {
     const targetId = getTargetId(frame);
     const userId = frame.user.id;
     if (targetId !== userId) {
-        return Promise.reject(new errors.NoPermissionError({message: i18n.t('errors.permissions.noPermissionToAction')}));
+        return Promise.reject(new errors.NoPermissionError({message: tpl(messages.noPermissionToAction)}));
     }
     return Promise.resolve();
 }
@@ -84,7 +93,7 @@ module.exports = {
                 .then((model) => {
                     if (!model) {
                         return Promise.reject(new errors.NotFoundError({
-                            message: i18n.t('errors.api.users.userNotFound')
+                            message: tpl(messages.userNotFound)
                         }));
                     }
 
@@ -117,7 +126,7 @@ module.exports = {
                 .then((model) => {
                     if (!model) {
                         return Promise.reject(new errors.NotFoundError({
-                            message: i18n.t('errors.api.users.userNotFound')
+                            message: tpl(messages.userNotFound)
                         }));
                     }
 
@@ -148,33 +157,7 @@ module.exports = {
         },
         permissions: true,
         async query(frame) {
-            const backupPath = await dbBackup.backup();
-            const parsedFileName = path.parse(backupPath);
-            const filename = `${parsedFileName.name}${parsedFileName.ext}`;
-
-            return models.Base.transaction((t) => {
-                frame.options.transacting = t;
-
-                return models.Post.destroyByAuthor(frame.options)
-                    .then(() => {
-                        return models.ApiKey.destroy({
-                            ...frame.options,
-                            require: true,
-                            destroyBy: {
-                                user_id: frame.options.id
-                            }
-                        }).catch((err) => {
-                            if (err instanceof models.ApiKey.NotFoundError) {
-                                return; //Do nothing here as it's ok
-                            }
-                            throw err;
-                        });
-                    })
-                    .then(() => {
-                        return models.User.destroy(Object.assign({status: 'all'}, frame.options));
-                    })
-                    .then(() => filename);
-            }).catch((err) => {
+            return userService.destroyUser(frame.options).catch((err) => {
                 return Promise.reject(new errors.NoPermissionError({
                     err: err
                 }));
@@ -235,9 +218,6 @@ module.exports = {
     },
 
     regenerateToken: {
-        headers: {
-            cacheInvalidate: true
-        },
         options: [
             'id'
         ],

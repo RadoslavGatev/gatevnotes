@@ -2,6 +2,7 @@
 const iff = (cond, yes, no) => (cond ? yes : no);
 module.exports = ({post, site, templateSettings}) => {
     const date = new Date();
+    const hasFeatureImageCaption = templateSettings.showFeatureImage && post.feature_image && post.feature_image_caption;
     return `<!doctype html>
 <html>
 
@@ -71,6 +72,10 @@ table td {
     display: block;
     margin: 0 auto;
     max-width: 600px;
+}
+
+.content a {
+    overflow-wrap: anywhere;
 }
 
 /* -------------------------------------
@@ -143,19 +148,27 @@ dd {
 }
 
 blockquote {
-    margin: 2em 0;
+    margin: 2em 0 2em 0;
     padding: 0 25px 0 25px;
-    border-left: #15212A 2px solid;
-    font-style: italic;
-    font-size: 20px;
-    line-height: 1.75em;
+    border-left: ${templateSettings.accentColor || '#15212A'} 2px solid;
+    font-size: 17px;
+    font-weight: 500;
+    line-height: 1.6em;
     letter-spacing: -0.2px;
+}
+
+blockquote.kg-blockquote-alt {
+    border-left: 0 none;
+    padding: 0 50px 0 50px;
+    text-align: center;
+    font-size: 1.2em;
+    font-style: italic;
+    color: #999999;
 }
 
 blockquote p {
     margin: 0.8em 0;
-    font-size: 1.2em;
-    font-weight: 300;
+    font-size: 1em;
 }
 
 blockquote small {
@@ -173,7 +186,7 @@ blockquote cite a {
 }
 
 a {
-    color: #15212A;
+    color: ${templateSettings.accentColor || '#15212A'};
     text-decoration: none;
 }
 
@@ -268,6 +281,10 @@ figure blockquote p {
     font-size: 1em;
 }
 
+.header-image {
+    padding-top: 16px;
+}
+
 .site-icon {
     padding-bottom: 10px;
     padding-top: 20px;
@@ -296,6 +313,10 @@ figure blockquote p {
     padding-bottom: 50px;
 }
 
+.site-title {
+    color: #15212A;
+}
+
 .post-title {
     padding-bottom: 10px;
     font-size: 42px;
@@ -303,12 +324,21 @@ figure blockquote p {
     font-weight: 600;
     text-align: center;
 }
+.post-title-serif {
+    font-family: Georgia, serif;
+}
+.post-title-left {
+    text-align: left;
+}
 
 .post-title-link {
     color: #15212A;
     display: block;
     text-align: center;
     margin-top: 50px;
+}
+.post-title-link-left {
+    text-align: left;
 }
 
 .post-meta,
@@ -320,6 +350,9 @@ figure blockquote p {
     letter-spacing: 0.2px;
     text-transform: uppercase;
     text-align: center;
+}
+.post-meta-left {
+    text-align: left;
 }
 
 .view-online {
@@ -335,6 +368,18 @@ figure blockquote p {
 .feature-image {
     padding-bottom: 30px;
     width: 100%;
+}
+
+.feature-image-with-caption {
+    padding-bottom: 10px;
+}
+
+.feature-image-caption {
+    width: 100%;
+    padding-bottom: 30px;
+    text-align: center;
+    font-size: 13px;
+    color: #738a94;
 }
 
 .post-content {
@@ -358,8 +403,12 @@ figure blockquote p {
 
 .post-content a,
 .post-content-sans-serif a {
-    color: #08121A;
+    color: ${templateSettings.accentColor || '#08121A'};
     text-decoration: underline;
+}
+
+a[data-flickr-embed] img {
+    height: auto;
 }
 
 .kg-bookmark-card {
@@ -378,6 +427,7 @@ figure blockquote p {
 .kg-image-card img {
     display: block;
     margin: 0 auto;
+    width: auto;
     height: auto !important;
 }
 
@@ -392,7 +442,8 @@ figure blockquote p {
 }
 
 .kg-bookmark-content {
-    flex-grow: 1;
+    display: inline-block;
+    width: 100%;
     padding: 20px;
 }
 
@@ -450,17 +501,17 @@ figure blockquote p {
     line-height: 1.5em;
 }
 
-.kg-bookmark-author:after {
-    content: "•";
-    margin: 0 6px;
-}
-
 .kg-bookmark-publisher {
     overflow: hidden;
     max-width: 240px;
     line-height: 1.5em;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.kg-bookmark-publisher:before {
+    content: "•";
+    margin: 0 6px;
 }
 
 .kg-gallery-container {
@@ -479,10 +530,12 @@ figure blockquote p {
     display: block;
     text-decoration: none !important;
 }
+
 .kg-video-preview table {
     background-size: cover;
     min-height: 200px; /* for when images aren't loaded */
 }
+
 .kg-video-play-button {
     height: 2em;
     width: 3em;
@@ -492,6 +545,7 @@ figure blockquote p {
     font-size: 1em; /* change this to resize */
     background-color: rgba(0,0,0,0.85);
 }
+
 .kg-video-play-button div {
     display: block;
     width: 0;
@@ -501,6 +555,198 @@ figure blockquote p {
     border-color: transparent transparent transparent white;
     border-style: solid;
     border-width: 0.8em 0 0.8em 1.5em;
+}
+
+.kg-nft-link {
+    display: block;
+    text-decoration: none !important;
+    color: #15212A !important;
+    font-family: inherit !important;
+    font-size: 14px;
+    line-height: 1.3em;
+    padding-top: 4px;
+    padding-right: 20px;
+    padding-left: 20px;
+    padding-bottom: 4px;
+}
+
+.kg-twitter-link {
+    display: block;
+    text-decoration: none !important;
+    color: #15212A !important;
+    font-family: inherit !important;
+    font-size: 15px;
+    padding: 8px;
+    line-height: 1.3em;
+}
+
+.kg-audio-thumbnail.placeholder {
+    background: ${templateSettings.accentColor || '#15212A'} !important;
+}
+
+.kg-callout-card {
+    display: flex;
+    margin: 0 0 1.5em 0;
+    padding: 20px 28px;
+    border-radius: 3px;
+}
+
+.kg-callout-card p {
+    margin: 0
+}
+
+.kg-callout-card-grey {
+    background: #eef0f2;
+}
+
+.kg-callout-card-white {
+    background: #fff;
+    box-shadow: inset 0 0 0 1px #dddedf;
+}
+
+.kg-callout-card-blue {
+    background: #E9F6FB;
+}
+
+.kg-callout-card-green {
+    background: #E8F8EA;
+}
+
+.kg-callout-card-yellow {
+    background: #FCF4E3;
+}
+
+.kg-callout-card-red {
+    background: #FBE9E9;
+}
+
+.kg-callout-card-pink {
+    background: #FCEEF8;
+}
+
+.kg-callout-card-purple {
+    background: #F2EDFC;
+}
+
+.kg-callout-card-accent {
+    background: ${templateSettings.accentColor || '#15212A'};
+    color: #fff;
+}
+
+.kg-callout-card-accent a {
+    color: #fff;
+}
+
+.kg-callout-emoji {
+    padding-right: 12px;
+    font-size: 20px;
+}
+
+.kg-header-card {
+    margin: 0 0 1.5em 0;
+    padding: 110px 35px 110px 35px;
+    text-align: center;
+}
+
+.kg-header-card.kg-size-small {
+    padding-top: 75px;
+    padding-bottom: 75px;
+}
+
+.kg-header-card.kg-size-large {
+    padding-top: 140px;
+    padding-bottom: 140px;
+}
+
+.kg-header-card.kg-align-left {
+    text-align: left;
+}
+
+.kg-header-card.kg-style-dark {
+    background: #15171a;
+    color: #ffffff;
+}
+
+.kg-header-card.kg-style-light {
+    background-color: #F9F9FA;
+}
+
+.kg-header-card.kg-style-accent {
+    background: ${templateSettings.accentColor || '#15171a'};
+    color: #ffffff;
+}
+
+.kg-header-card.kg-style-image {
+    background-color: #e7e7eb;
+    background-size: cover;
+    background-position: center center;
+    color: #ffffff;
+}
+
+.kg-header-card h2 {
+    font-size: 3em;
+    font-weight: 700;
+    line-height: 1.1em;
+    margin: 0 0 0.125em;
+}
+
+.kg-header-card h2 strong {
+    font-weight: 800;
+}
+
+.kg-header-card.kg-size-small h2 {
+    font-size: 2.5em;
+}
+
+.kg-header-card.kg-size-large h2 {
+    font-size: 3.5em;
+}
+
+.kg-header-card h3 {
+    font-size: 1.125em;
+    font-weight: 500;
+    line-height: 1.3em;
+    margin: 0;
+}
+
+.kg-header-card h3 strong {
+    font-weight: 600;
+}
+
+.kg-header-card.kg-size-large h3 {
+    font-size: 1.25em;
+}
+
+.kg-header-card.kg-size-small h3 {
+    font-size: 1em;
+}
+
+.kg-header-card-button {
+    margin-top: 1.75em;
+    background: #ffffff;
+    border-radius: 5px;
+    box-sizing: border-box;
+    cursor: pointer;
+    display: inline-block;
+    font-size: 14px;
+    font-weight: bold;
+    margin: 0;
+    padding: 8px 16px;
+    text-decoration: none !important;
+    color: #15171A !important;
+}
+
+.kg-size-large .kg-header-card-button {
+    margin-top: 2em;
+}
+
+.kg-size-small .kg-header-card-button {
+    margin-top: 1.5em;
+}
+
+.kg-style-light .kg-header-card-button {
+    background: ${templateSettings.accentColor || '#15212A'} !important;
+    color: #ffffff !important;
 }
 
 
@@ -546,6 +792,7 @@ figure blockquote p {
 .btn {
     box-sizing: border-box;
     width: 100%;
+    display: table;
 }
 
 .btn>tbody>tr>td {
@@ -575,7 +822,6 @@ figure blockquote p {
     margin: 0;
     padding: 12px 25px;
     text-decoration: none;
-    text-transform: capitalize;
 }
 
 .btn-primary table td {
@@ -586,6 +832,16 @@ figure blockquote p {
     background-color: #3498db;
     border-color: #3498db;
     color: #ffffff;
+}
+
+.btn-accent table td {
+    background-color: ${templateSettings.adjustedAccentColor || '#3498db'};
+}
+
+.btn-accent a {
+    background-color: ${templateSettings.adjustedAccentColor || '#3498db'};
+    border-color: ${templateSettings.adjustedAccentColor || '#3498db'};
+    color: ${templateSettings.adjustedAccentContrastColor || '#ffffff'};
 }
 
 /* -------------------------------------
@@ -767,10 +1023,17 @@ figure blockquote p {
     }
 
     table.body blockquote {
-        font-size: 17px !important;
-        line-height: 1.6em !important;
-        margin-bottom: 0 !important;
-        padding-left: 15px !important;
+        font-size: 17px;
+        line-height: 1.6em;
+        margin-bottom: 0;
+        padding-left: 15px;
+    }
+
+    table.body blockquote.kg-blockquote-alt {
+        border-left: 0 none !important;
+        margin: 0 0 2.5em 0 !important;
+        padding: 0 50px 0 50px !important;
+        font-size: 1.2em;
     }
 
     table.body blockquote + * {
@@ -847,12 +1110,10 @@ ${ templateSettings.showBadge ? `
 }
 ` : ''}
 
-/* ----- ENDIF THE BROWSER ----- */
-
 </style>
 </head>
 
-<body class="">
+<body>
     <span class="preheader">${ post.excerpt ? post.excerpt : `${post.title} – ` }</span>
     <table role="presentation" border="0" cellpadding="0" cellspacing="0" class="body" width="100%">
 
@@ -877,19 +1138,27 @@ ${ templateSettings.showBadge ? `
                             <td class="wrapper">
                                 <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
 
+                                    ${ templateSettings.headerImage ? `
+                                    <tr>
+                                        <td class="header-image" width="100%" align="center"><img src="${templateSettings.headerImage}"${templateSettings.headerImageWidth ? ` width="${templateSettings.headerImageWidth}"` : ''}></td>
+                                    </tr>
+                                    ` : ''}
 
-                                    ${ templateSettings.showSiteHeader ? `
+
+                                    ${ templateSettings.showHeaderIcon || templateSettings.showHeaderTitle ? `
                                     <tr>
                                         <td class="site-info" width="100%" align="center">
                                             <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                                                ${ site.iconUrl ? `
+                                                ${ templateSettings.showHeaderIcon && site.iconUrl ? `
                                                 <tr>
                                                     <td class="site-icon"><a href="${site.url}"><img src="${site.iconUrl}" border="0"></a></td>
                                                 </tr>
                                                 ` : ``}
+                                                ${ templateSettings.showHeaderTitle ? `
                                                 <tr>
-                                                    <td class="site-url"><div style="width: 100% !important;"><a href="${site.url}">${site.title}</a></div></td>
+                                                    <td class="site-url"><div style="width: 100% !important;"><a href="${site.url}" class="site-title">${site.title}</a></div></td>
                                                 </tr>
+                                                ` : ``}
                                             </table>
                                         </td>
                                     </tr>
@@ -897,13 +1166,15 @@ ${ templateSettings.showBadge ? `
 
 
                                     <tr>
-                                        <td class="post-title"><a href="${post.url}" class="post-title-link">${post.title}</a></td>
+                                        <td class="post-title ${templateSettings.titleFontCategory === 'serif' ? `post-title-serif` : `` } ${templateSettings.titleAlignment === 'left' ? `post-title-left` : ``}">
+                                            <a href="${post.url}" class="post-title-link ${templateSettings.titleAlignment === 'left' ? `post-title-link-left` : ``}">${post.title}</a>
+                                        </td>
                                     </tr>
                                     <tr>
-                                        <td align="center">
+                                        <td>
                                             <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
                                                 <tr>
-                                                    <td class="post-meta">
+                                                    <td class="post-meta ${templateSettings.titleAlignment === 'left' ? `post-meta-left` : ``}">
                                                         By ${post.authors} –
                                                         ${post.published_at} –
                                                         <a href="${post.url}" class="view-online-link">View online →</a>
@@ -912,9 +1183,14 @@ ${ templateSettings.showBadge ? `
                                             </table>
                                         </td>
                                     </tr>
-                                    ${post.feature_image ? `
+                                    ${ templateSettings.showFeatureImage && post.feature_image ? `
                                     <tr>
-                                        <td class="feature-image"><img src="${post.feature_image}"></td>
+                                        <td class="feature-image ${hasFeatureImageCaption ? 'feature-image-with-caption' : ''}"><img src="${post.feature_image}"${post.feature_image_width ? ` width="${post.feature_image_width}"` : ''}${post.feature_image_alt ? ` alt="${post.feature_image_alt}"` : ''}></td>
+                                    </tr>
+                                    ` : ``}
+                                    ${ hasFeatureImageCaption ? `
+                                    <tr>
+                                        <td class="feature-image-caption" align="center">${post.feature_image_caption}</td>
                                     </tr>
                                     ` : ``}
                                     <tr>
@@ -940,7 +1216,7 @@ ${ templateSettings.showBadge ? `
 
                                     ${ templateSettings.showBadge ? `
                                     <tr>
-                                        <td class="footer-powered"><a href="https://ghost.org/"><img src="https://static.ghost.org/v3.0.0/images/powered.png" border="0" width="142" height="30" class="gh-powered" alt="Publish with Ghost"></a></td>
+                                        <td class="footer-powered"><a href="https://ghost.org/"><img src="https://static.ghost.org/v4.0.0/images/powered.png" border="0" width="142" height="30" class="gh-powered" alt="Publish with Ghost"></a></td>
                                     </tr>
                                     ` : '' }
                                 </table>

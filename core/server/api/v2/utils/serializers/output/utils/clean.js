@@ -96,6 +96,7 @@ const post = (attrs, frame) => {
         // @TODO: https://github.com/TryGhost/Ghost/issues/10335
         // delete attrs.page;
         delete attrs.status;
+        delete attrs.email_only;
 
         // We are standardising on returning null from the Content API for any empty values
         if (attrs.twitter_title === '') {
@@ -133,6 +134,11 @@ const post = (attrs, frame) => {
     delete attrs.locale;
     delete attrs.author;
     delete attrs.type;
+    delete attrs.send_email_when_published;
+    delete attrs.email_recipient_filter;
+    delete attrs.email_subject;
+    delete attrs.feature_image_alt;
+    delete attrs.feature_image_caption;
 
     return attrs;
 };

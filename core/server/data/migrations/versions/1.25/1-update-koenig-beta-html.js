@@ -1,6 +1,6 @@
 const _ = require('lodash');
 const Promise = require('bluebird');
-const logging = require('../../../../../shared/logging');
+const logging = require('@tryghost/logging');
 const mobiledocLib = require('../../../../lib/mobiledoc');
 const models = require('../../../../models');
 const message1 = 'Migrating Koenig beta post\'s mobiledoc/HTML to 2.0 format';
@@ -45,6 +45,7 @@ module.exports.up = function regenerateKoenigBetaHTML(options) {
                     || (mobiledoc && !mobiledocIsCompatibleWithV1(mobiledoc))
                 ) {
                     // change imagecard.payload.imageStyle to imagecard.payload.cardWidth
+                    // eslint-disable-next-line no-restricted-syntax
                     mobiledoc.cards.forEach((card) => {
                         if (card[0] === 'image') {
                             card[1].cardWidth = card[1].imageStyle;

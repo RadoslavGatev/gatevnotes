@@ -1,7 +1,60 @@
 const _ = require('lodash');
 const url = require('./utils/url');
 const typeGroupMapper = require('../../../../shared/serializers/input/utils/settings-filter-type-group-mapper');
-const settingsCache = require('../../../../../services/settings/cache');
+const settingsCache = require('../../../../../../shared/settings-cache');
+
+const DEPRECATED_SETTINGS = [
+    'bulk_email_settings',
+    'slack'
+];
+
+const deprecatedSupportedSettingsOneToManyMap = {
+    slack: [{
+        from: '[0].url',
+        to: {
+            key: 'slack_url',
+            group: 'slack',
+            type: 'string'
+        }
+    }, {
+        from: '[0].username',
+        to: {
+            key: 'slack_username',
+            group: 'slack',
+            type: 'string'
+        }
+    }]
+};
+
+const getMappedDeprecatedSettings = (settings) => {
+    const mappedSettings = [];
+
+    for (const key in deprecatedSupportedSettingsOneToManyMap) {
+        const deprecatedSetting = settings.find(setting => setting.key === key);
+
+        if (deprecatedSetting) {
+            let deprecatedSettingValue;
+
+            try {
+                deprecatedSettingValue = JSON.parse(deprecatedSetting.value);
+            } catch (err) {
+                // ignore the value if it's invalid
+            }
+
+            if (deprecatedSettingValue) {
+                deprecatedSupportedSettingsOneToManyMap[key].forEach(({from, to}) => {
+                    const value = _.get(deprecatedSettingValue, from);
+                    mappedSettings.push({
+                        key: to.key,
+                        value: value
+                    });
+                });
+            }
+        }
+    }
+
+    return mappedSettings;
+};
 
 module.exports = {
     browse(apiConfig, frame) {
@@ -38,21 +91,22 @@ module.exports = {
 
         const settings = settingsCache.getAll();
 
-        // Ignore and drop all values with Read-only flag
         frame.data.settings = frame.data.settings.filter((setting) => {
             const settingFlagsStr = settings[setting.key] ? settings[setting.key].flags : '';
             const settingFlagsArr = settingFlagsStr ? settingFlagsStr.split(',') : [];
-            return !settingFlagsArr.includes('RO');
+
+            // Ignore and drop all values with Read-only flag AND 'labs' setting
+            return !settingFlagsArr.includes('RO') && (setting.key !== 'labs');
         });
 
-        frame.data.settings = frame.data.settings.filter((setting) => {
-            return setting.key !== 'bulk_email_settings';
-        });
+        frame.data.settings.push(...getMappedDeprecatedSettings(frame.data.settings));
 
         frame.data.settings.forEach((setting) => {
             const settingType = settings[setting.key] ? settings[setting.key].type : '';
 
             // TODO: Needs to be removed once we get rid of all `object` type settings
+            // NOTE: this transformation is more related to the fact that internal API calls call
+            //       settings API with plain objects instead of stringified ones
             if (_.isObject(setting.value)) {
                 setting.value = JSON.stringify(setting.value);
             }
@@ -83,9 +137,16 @@ module.exports = {
                 setting.key = 'timezone';
             }
 
-            if (['cover_image', 'icon', 'logo'].includes(setting.key)) {
-                setting = url.forSetting(setting);
+            if (setting.key === 'unsplash') {
+                setting.value = JSON.parse(setting.value).isActive;
             }
+
+            setting = url.forSetting(setting);
+        });
+
+        // Ignore all deprecated settings
+        frame.data.settings = frame.data.settings.filter((setting) => {
+            return DEPRECATED_SETTINGS.includes(setting.key) === false;
         });
     }
 };

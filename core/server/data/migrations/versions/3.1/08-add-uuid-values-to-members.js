@@ -1,4 +1,4 @@
-const logging = require('../../../../../shared/logging');
+const logging = require('@tryghost/logging');
 const uuid = require('uuid');
 
 module.exports = {
@@ -12,6 +12,7 @@ module.exports = {
 
         logging.info(`Adding uuid field value to ${membersWithoutUUID.length} members.`);
 
+        // eslint-disable-next-line no-restricted-syntax
         for (const member of membersWithoutUUID) {
             await conn('members').update('uuid', uuid.v4()).where('id', member.id);
         }

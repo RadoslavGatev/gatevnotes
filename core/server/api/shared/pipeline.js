@@ -1,4 +1,4 @@
-const debug = require('ghost-ignition').debug('api:shared:pipeline');
+const debug = require('@tryghost/debug')('api:shared:pipeline');
 const Promise = require('bluebird');
 const _ = require('lodash');
 const shared = require('../shared');
@@ -173,7 +173,7 @@ const STAGES = {
  *
  * @param {Function} apiController
  * @param {Object} apiUtils - Local utils (validation & serialisation) from target API version
- * @param {String} apiType - Content or Admin API access
+ * @param {String} [apiType] - Content or Admin API access
  * @return {Function}
  */
 const pipeline = (apiController, apiUtils, apiType) => {

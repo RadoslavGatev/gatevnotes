@@ -17,7 +17,7 @@ module.exports = {
         validation: {
             options: {
                 include: {
-                    values: exporter.EXCLUDED_TABLES
+                    values: exporter.BACKUP_TABLES
                 }
             }
         },
@@ -37,7 +37,7 @@ module.exports = {
         validation: {
             options: {
                 include: {
-                    values: exporter.EXCLUDED_TABLES
+                    values: exporter.BACKUP_TABLES
                 }
             }
         },
@@ -62,19 +62,22 @@ module.exports = {
             return Promise.resolve()
                 .then(() => exporter.doExport({include: frame.options.withRelated}))
                 .catch((err) => {
-                    return Promise.reject(new errors.GhostError({err: err}));
+                    return Promise.reject(new errors.InternalServerError({err: err}));
                 });
         }
     },
 
     importContent: {
+        headers: {
+            cacheInvalidate: true
+        },
         options: [
             'include'
         ],
         validation: {
             options: {
                 include: {
-                    values: exporter.EXCLUDED_TABLES
+                    values: exporter.BACKUP_TABLES
                 }
             }
         },
@@ -85,6 +88,9 @@ module.exports = {
     },
 
     deleteAllContent: {
+        headers: {
+            cacheInvalidate: true
+        },
         statusCode: 204,
         permissions: true,
         query() {
@@ -118,7 +124,7 @@ module.exports = {
                             }, {concurrency: 100});
                         })
                         .catch((err) => {
-                            throw new errors.GhostError({
+                            throw new errors.InternalServerError({
                                 err: err
                             });
                         });

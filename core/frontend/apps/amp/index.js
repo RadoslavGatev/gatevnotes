@@ -1,9 +1,10 @@
+const path = require('path');
+
 const router = require('./lib/router');
-const registerHelpers = require('./lib/helpers');
 const urlUtils = require('../../../shared/url-utils');
 
 // Dirty requires
-const settingsCache = require('../../../server/services/settings/cache');
+const settingsCache = require('../../../shared/settings-cache');
 
 function ampRouter(req, res) {
     if (settingsCache.get('amp') === true) {
@@ -22,7 +23,8 @@ module.exports = {
         let ampRoute = '*/amp/';
 
         ghost.routeService.registerRouter(ampRoute, ampRouter);
-
-        registerHelpers(ghost);
+        ghost.helperService.registerDir(path.resolve(__dirname, './lib/helpers'));
+        // we use the {{ghost_head}} helper, but call it {{amp_ghost_head}}, so it's consistent
+        ghost.helperService.registerAlias('amp_ghost_head', 'ghost_head');
     }
 };

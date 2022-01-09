@@ -1,6 +1,11 @@
 const ghostBookshelf = require('./base');
-const {i18n} = require('../lib/common');
+const tpl = require('@tryghost/tpl');
 const errors = require('@tryghost/errors');
+const urlUtils = require('../../shared/url-utils');
+
+const messages = {
+    tagNotFound: 'Tag not found.'
+};
 
 let Tag;
 let Tags;
@@ -15,18 +20,70 @@ Tag = ghostBookshelf.Model.extend({
         };
     },
 
+    formatOnWrite(attrs) {
+        const urlTransformMap = {
+            feature_image: 'toTransformReady',
+            og_image: 'toTransformReady',
+            twitter_image: 'toTransformReady',
+            codeinjection_head: 'htmlToTransformReady',
+            codeinjection_foot: 'htmlToTransformReady',
+            canonical_url: {
+                method: 'toTransformReady',
+                options: {
+                    ignoreProtocol: false
+                }
+            }
+        };
+
+        Object.entries(urlTransformMap).forEach(([attr, transform]) => {
+            let method = transform;
+            let transformOptions = {};
+
+            if (typeof transform === 'object') {
+                method = transform.method;
+                transformOptions = transform.options || {};
+            }
+
+            if (attrs[attr]) {
+                attrs[attr] = urlUtils[method](attrs[attr], transformOptions);
+            }
+        });
+
+        return attrs;
+    },
+
+    parse() {
+        const attrs = ghostBookshelf.Model.prototype.parse.apply(this, arguments);
+
+        // transform URLs from __GHOST_URL__ to absolute
+        [
+            'feature_image',
+            'og_image',
+            'twitter_image',
+            'codeinjection_head',
+            'codeinjection_foot',
+            'canonical_url'
+        ].forEach((attr) => {
+            if (attrs[attr]) {
+                attrs[attr] = urlUtils.transformReadyToAbsolute(attrs[attr]);
+            }
+        });
+
+        return attrs;
+    },
+
     emitChange: function emitChange(event, options) {
         const eventToTrigger = 'tag' + '.' + event;
         ghostBookshelf.Model.prototype.emitChange.bind(this)(this, eventToTrigger, options);
     },
 
-    onCreated: function onCreated(model, attrs, options) {
+    onCreated: function onCreated(model, options) {
         ghostBookshelf.Model.prototype.onCreated.apply(this, arguments);
 
         model.emitChange('added', options);
     },
 
-    onUpdated: function onUpdated(model, attrs, options) {
+    onUpdated: function onUpdated(model, options) {
         ghostBookshelf.Model.prototype.onUpdated.apply(this, arguments);
 
         model.emitChange('edited', options);
@@ -122,7 +179,7 @@ Tag = ghostBookshelf.Model.extend({
             .then(function destroyTagsAndPost(tag) {
                 if (!tag) {
                     return Promise.reject(new errors.NotFoundError({
-                        message: i18n.t('errors.api.tags.tagNotFound')
+                        message: tpl(messages.tagNotFound)
                     }));
                 }
 

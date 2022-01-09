@@ -1,7 +1,7 @@
 const Promise = require('bluebird');
 const ObjectId = require('bson-objectid');
 const _ = require('lodash');
-const logging = require('../../../../../shared/logging');
+const logging = require('@tryghost/logging');
 
 module.exports.config = {
     transaction: true,
@@ -34,7 +34,7 @@ module.exports.up = (options) => {
                             [prop]: subscriber[prop]
                         });
                     }, {});
-                    member.id = ObjectId.generate();
+                    member.id = ObjectId().toHexString();
 
                     return member;
                 });

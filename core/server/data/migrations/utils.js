@@ -1,13 +1,24 @@
 const ObjectId = require('bson-objectid').default;
-const logging = require('../../../shared/logging');
+const logging = require('@tryghost/logging');
+const errors = require('@tryghost/errors');
+const tpl = require('@tryghost/tpl');
 const commands = require('../schema').commands;
 
 const MIGRATION_USER = 1;
 
+const messages = {
+    permissionRoleActionError: 'Cannot {action} permission({permission}) with role({role}) - {resource} does not exist'
+};
+
 /**
  * Creates a migrations which will add a new table from schema.js to the database
+ * @param {string} name - table name
+ * @param {Object} tableSpec - copy of table schema definition as defined in schema.js at the moment of writing the migration,
+ * this parameter MUST be present, otherwise @daniellockyer will hunt you down
+ *
+ * @returns {Object} migration object returning config/up/down properties
  */
-function addTable(name) {
+function addTable(name, tableSpec) {
     return createNonTransactionalMigration(
         async function up(connection) {
             const tableExists = await connection.schema.hasTable(name);
@@ -17,7 +28,7 @@ function addTable(name) {
             }
 
             logging.info(`Adding table: ${name}`);
-            return commands.createTable(name, connection);
+            return commands.createTable(name, connection, tableSpec);
         },
         async function down(connection) {
             const tableExists = await connection.schema.hasTable(name);
@@ -28,6 +39,28 @@ function addTable(name) {
 
             logging.info(`Dropping table: ${name}`);
             return commands.deleteTable(name, connection);
+        }
+    );
+}
+
+/**
+ * Creates migration which will drop a table
+ *
+ * @param {[string]} names  - names of the tables to drop
+ */
+function dropTables(names) {
+    return createIrreversibleMigration(
+        async function up(connection) {
+            for (const name of names) {
+                const exists = await connection.schema.hasTable(name);
+
+                if (!exists) {
+                    logging.warn(`Failed to drop table: ${name} - table does not exist`);
+                } else {
+                    logging.info(`Dropping table: ${name}`);
+                    await commands.deleteTable(name, connection);
+                }
+            }
         }
     );
 }
@@ -61,7 +94,7 @@ function addPermission(config) {
             const date = connection.raw('CURRENT_TIMESTAMP');
 
             await connection('permissions').insert({
-                id: ObjectId.generate(),
+                id: ObjectId().toHexString(),
                 name: config.name,
                 action_type: config.action,
                 object_type: config.object,
@@ -110,9 +143,14 @@ function addPermissionToRole(config) {
             }).first();
 
             if (!permission) {
-                throw new Error(
-                    `Cannot add permission(${config.permission}) to role(${config.role}) - permission does not exist`
-                );
+                throw new errors.InternalServerError({
+                    message: tpl(messages.permissionRoleActionError, {
+                        action: 'add',
+                        permission: config.permission,
+                        role: config.role,
+                        resource: 'permission'
+                    })
+                });
             }
 
             const role = await connection('roles').where({
@@ -120,9 +158,14 @@ function addPermissionToRole(config) {
             }).first();
 
             if (!role) {
-                throw new Error(
-                    `Cannot add permission(${config.permission}) to role(${config.role}) - role does not exist`
-                );
+                throw new errors.InternalServerError({
+                    message: tpl(messages.permissionRoleActionError, {
+                        action: 'add',
+                        permission: config.permission,
+                        role: config.role,
+                        resource: 'role'
+                    })
+                });
             }
 
             const existingRelation = await connection('permissions_roles').where({
@@ -137,7 +180,7 @@ function addPermissionToRole(config) {
 
             logging.warn(`Adding permission(${config.permission}) to role(${config.role})`);
             await connection('permissions_roles').insert({
-                id: ObjectId.generate(),
+                id: ObjectId().toHexString(),
                 permission_id: permission.id,
                 role_id: role.id
             });
@@ -148,9 +191,8 @@ function addPermissionToRole(config) {
             }).first();
 
             if (!permission) {
-                throw new Error(
-                    `Cannot remove permission(${config.permission}) from role(${config.role}) - permission does not exist`
-                );
+                logging.warn(`Removing permission(${config.permission}) from role(${config.role}) - Permission not found.`);
+                return;
             }
 
             const role = await connection('roles').where({
@@ -158,9 +200,8 @@ function addPermissionToRole(config) {
             }).first();
 
             if (!role) {
-                throw new Error(
-                    `Cannot remove permission(${config.permission}) from role(${config.role}) - role does not exist`
-                );
+                logging.warn(`Removing permission(${config.permission}) from role(${config.role}) - Role not found.`);
+                return;
             }
 
             const existingRelation = await connection('permissions_roles').where({
@@ -217,6 +258,25 @@ function createNonTransactionalMigration(up, down) {
         },
         async down(config) {
             await down(config.connection);
+        }
+    };
+}
+
+/**
+ * @param {(connection: import('knex')) => Promise<void>} up
+ *
+ * @returns {Migration}
+ */
+function createIrreversibleMigration(up) {
+    return {
+        config: {
+            irreversible: true
+        },
+        async up(config) {
+            await up(config.connection);
+        },
+        async down() {
+            return Promise.reject();
         }
     };
 }
@@ -349,13 +409,66 @@ function createDropColumnMigration(table, column, columnDefinition) {
     );
 }
 
+/**
+ * Creates a migration which will insert a new setting in settings table
+ * @param {object} settingSpec - setting key, value, group and type
+ *
+ * @returns {Object} migration object returning config/up/down properties
+ */
+function addSetting({key, value, type, group}) {
+    return createTransactionalMigration(
+        async function up(connection) {
+            const settingExists = await connection('settings')
+                .where('key', '=', key)
+                .first();
+            if (settingExists) {
+                logging.warn(`Skipping adding setting: ${key} - setting already exists`);
+                return;
+            }
+
+            logging.info(`Adding setting: ${key}`);
+            const now = connection.raw('CURRENT_TIMESTAMP');
+
+            return connection('settings')
+                .insert({
+                    id: ObjectId().toHexString(),
+                    key,
+                    value,
+                    group,
+                    type,
+                    created_at: now,
+                    created_by: MIGRATION_USER,
+                    updated_at: now,
+                    updated_by: MIGRATION_USER
+                });
+        },
+        async function down(connection) {
+            const settingExists = await connection('settings')
+                .where('key', '=', key)
+                .first();
+            if (!settingExists) {
+                logging.warn(`Skipping dropping setting: ${key} - setting does not exist`);
+                return;
+            }
+
+            logging.info(`Dropping setting: ${key}`);
+            return connection('settings')
+                .where('key', '=', key)
+                .del();
+        }
+    );
+}
+
 module.exports = {
     addTable,
+    dropTables,
     addPermission,
     addPermissionToRole,
     addPermissionWithRoles,
+    addSetting,
     createTransactionalMigration,
     createNonTransactionalMigration,
+    createIrreversibleMigration,
     combineTransactionalMigrations,
     combineNonTransactionalMigrations,
     createAddColumnMigration,

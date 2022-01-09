@@ -1,4 +1,4 @@
-const logging = require('../../../../../shared/logging');
+const logging = require('@tryghost/logging');
 const ObjectId = require('bson-objectid').default;
 
 module.exports = {
@@ -24,6 +24,7 @@ module.exports = {
             key: 'stripe_plans'
         }];
 
+        // eslint-disable-next-line no-restricted-syntax
         for (const operation of defaultOperations) {
             logging.info(`Updating ${operation.key} setting group,type,flags`);
             await knex('settings')
@@ -86,6 +87,7 @@ module.exports = {
             value: JSON.stringify(stripePlans)
         }];
 
+        // eslint-disable-next-line no-restricted-syntax
         for (const operation of valueOperations) {
             logging.info(`Updating ${operation.key} setting value`);
             await knex('settings')
@@ -149,7 +151,7 @@ module.exports = {
         logging.info(`Inserting members_subscription_settings setting`);
         await knex('settings')
             .insert({
-                id: ObjectId.generate(),
+                id: ObjectId().toHexString(),
                 key: 'members_subscription_settings',
                 value: JSON.stringify(membersSubscriptionSettings),
                 group: 'members',
@@ -170,6 +172,7 @@ module.exports = {
             'stripe_secret_key'
         ];
 
+        // eslint-disable-next-line no-restricted-syntax
         for (const setting of settingsToDelete) {
             logging.info(`Deleting ${setting} setting`);
         }

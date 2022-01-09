@@ -1,11 +1,22 @@
+const Promise = require('bluebird');
 const api = require('./index');
 const config = require('../../../shared/config');
-const {i18n} = require('../../lib/common');
+const tpl = require('@tryghost/tpl');
 const errors = require('@tryghost/errors');
 const web = require('../../web');
 const models = require('../../models');
 const auth = require('../../services/auth');
 const invitations = require('../../services/invitations');
+const dbBackup = require('../../data/db/backup');
+const apiMail = require('./index').mail;
+const apiSettings = require('./index').settings;
+const UsersService = require('../../services/users');
+const userService = new UsersService({dbBackup, models, auth, apiMail, apiSettings});
+const {deleteAllSessions} = require('../../services/auth/session');
+
+const messages = {
+    notTheBlogOwner: 'You are not the site owner.'
+};
 
 module.exports = {
     docName: 'authentication',
@@ -13,6 +24,9 @@ module.exports = {
     setup: {
         statusCode: 201,
         permissions: false,
+        headers: {
+            cacheInvalidate: true
+        },
         validation: {
             docName: 'setup'
         },
@@ -33,6 +47,13 @@ module.exports = {
                     return auth.setup.setupUser(setupDetails);
                 })
                 .then((data) => {
+                    try {
+                        return auth.setup.doProduct(data, api.products);
+                    } catch (e) {
+                        return data;
+                    }
+                })
+                .then((data) => {
                     return auth.setup.doSettings(data, api.settings);
                 })
                 .then((user) => {
@@ -43,11 +64,14 @@ module.exports = {
     },
 
     updateSetup: {
+        headers: {
+            cacheInvalidate: true
+        },
         permissions: (frame) => {
             return models.User.findOne({role: 'Owner', status: 'all'})
                 .then((owner) => {
                     if (owner.id !== frame.options.context.user) {
-                        throw new errors.NoPermissionError({message: i18n.t('errors.api.authentication.notTheBlogOwner')});
+                        throw new errors.NoPermissionError({message: tpl(messages.notTheBlogOwner)});
                     }
                 });
         },
@@ -78,17 +102,15 @@ module.exports = {
 
     isSetup: {
         permissions: false,
-        query() {
-            return auth.setup.checkIsSetup()
-                .then((isSetup) => {
-                    return {
-                        status: isSetup,
-                        // Pre-populate from config if, and only if the values exist in config.
-                        title: config.title || undefined,
-                        name: config.user_name || undefined,
-                        email: config.user_email || undefined
-                    };
-                });
+        async query() {
+            const isSetup = await auth.setup.checkIsSetup();
+
+            return {
+                status: isSetup,
+                title: config.title,
+                name: config.user_name,
+                email: config.user_email
+            };
         }
     },
 
@@ -141,7 +163,7 @@ module.exports = {
                     options = Object.assign(options, {context: {internal: true}});
                     return auth.passwordreset.doReset(options, tokenParts, api.settings)
                         .then((params) => {
-                            web.shared.middlewares.api.spamPrevention.userLogin().reset(frame.options.ip, `${tokenParts.email}login`);
+                            web.shared.middleware.api.spamPrevention.userLogin().reset(frame.options.ip, `${tokenParts.email}login`);
                             return params;
                         });
                 });
@@ -182,6 +204,14 @@ module.exports = {
 
                     return models.Invite.findOne({email: email, status: 'sent'}, frame.options);
                 });
+        }
+    },
+
+    resetAllPasswords: {
+        permissions: true,
+        async query(frame) {
+            await userService.resetAllPasswords(frame.options);
+            await deleteAllSessions();
         }
     }
 };

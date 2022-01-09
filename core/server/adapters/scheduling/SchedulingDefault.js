@@ -1,10 +1,10 @@
 const util = require('util');
 const moment = require('moment');
-const debug = require('ghost-ignition').debug('scheduling-default');
+const debug = require('@tryghost/debug')('scheduling-default');
 const SchedulingBase = require('./SchedulingBase');
-const logging = require('../../../shared/logging');
+const logging = require('@tryghost/logging');
 const errors = require('@tryghost/errors');
-const request = require('../../lib/request');
+const request = require('@tryghost/request');
 
 /**
  * @description Default post scheduling implementation.
@@ -203,7 +203,7 @@ SchedulingDefault.prototype._deleteJob = function (object) {
  *    - accuracy
  *    - setTimeout is limited to 24,3 days
  *
- * The execution of "setTimeout" is never guaranteed, therefor we've optimised the execution by using "setImmediate".
+ * The execution of "setTimeout" is never guaranteed, therefore we've optimized the execution by using "setImmediate".
  * The executor will put each job to sleep using `setTimeout` with a threshold of 70ms. And "setImmediate" is then
  * used to detect the correct moment to trigger the URL.
 
@@ -276,6 +276,7 @@ SchedulingDefault.prototype._pingUrl = function (object) {
     const options = {
         timeout: requestTimeout,
         method: httpMethod.toLowerCase(),
+        retry: 0,
         headers: {
             'Content-Type': 'application/json'
         }
@@ -306,7 +307,7 @@ SchedulingDefault.prototype._pingUrl = function (object) {
                 this._pingUrl(object);
             }, this.retryTimeoutInMs);
 
-            logging.error(new errors.GhostError({
+            logging.error(new errors.InternalServerError({
                 err,
                 context: 'Retrying...',
                 level: 'normal'
@@ -315,7 +316,7 @@ SchedulingDefault.prototype._pingUrl = function (object) {
             return;
         }
 
-        logging.error(new errors.GhostError({
+        logging.error(new errors.InternalServerError({
             err,
             level: 'critical'
         }));

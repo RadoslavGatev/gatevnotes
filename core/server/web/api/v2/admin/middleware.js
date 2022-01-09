@@ -1,8 +1,12 @@
 const errors = require('@tryghost/errors');
-const {i18n} = require('../../../../lib/common');
+const tpl = require('@tryghost/tpl');
 const auth = require('../../../../services/auth');
 const shared = require('../../../shared');
 const apiMw = require('../../middleware');
+
+const messages = {
+    notImplemented: 'The server does not support the functionality required to fulfill the request.'
+};
 
 const notImplemented = function (req, res, next) {
     // CASE: user is logged in, allow
@@ -36,9 +40,9 @@ const notImplemented = function (req, res, next) {
         }
     }
 
-    next(new errors.GhostError({
+    next(new errors.InternalServerError({
         errorType: 'NotImplementedError',
-        message: i18n.t('errors.api.common.notImplemented'),
+        message: tpl(messages.notImplemented),
         statusCode: '501'
     }));
 };
@@ -51,8 +55,8 @@ module.exports.authAdminApi = [
     auth.authorize.authorizeAdminApi,
     apiMw.updateUserLastSeen,
     apiMw.cors,
-    shared.middlewares.urlRedirects.adminSSLAndHostRedirect,
-    shared.middlewares.prettyUrls,
+    shared.middleware.urlRedirects.adminSSLAndHostRedirect,
+    shared.middleware.prettyUrls,
     notImplemented
 ];
 
@@ -65,8 +69,8 @@ module.exports.authAdminApiWithUrl = [
     auth.authorize.authorizeAdminApi,
     apiMw.updateUserLastSeen,
     apiMw.cors,
-    shared.middlewares.urlRedirects.adminSSLAndHostRedirect,
-    shared.middlewares.prettyUrls,
+    shared.middleware.urlRedirects.adminSSLAndHostRedirect,
+    shared.middleware.prettyUrls,
     notImplemented
 ];
 
@@ -75,7 +79,7 @@ module.exports.authAdminApiWithUrl = [
  */
 module.exports.publicAdminApi = [
     apiMw.cors,
-    shared.middlewares.urlRedirects.adminSSLAndHostRedirect,
-    shared.middlewares.prettyUrls,
+    shared.middleware.urlRedirects.adminSSLAndHostRedirect,
+    shared.middleware.prettyUrls,
     notImplemented
 ];

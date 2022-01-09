@@ -3,7 +3,7 @@ const postsMetaSchema = require('../../../schema').tables.posts_meta;
 const ObjectId = require('bson-objectid');
 const _ = require('lodash');
 const models = require('../../../../models');
-const logging = require('../../../../../shared/logging');
+const logging = require('@tryghost/logging');
 
 module.exports.config = {
     transaction: true
@@ -40,7 +40,7 @@ module.exports.up = (options) => {
                         });
                     }, {});
                     postsMetaEntry.post_id = post.get('id');
-                    postsMetaEntry.id = ObjectId.generate();
+                    postsMetaEntry.id = ObjectId().toHexString();
                     return postsMetaEntry;
                 });
 

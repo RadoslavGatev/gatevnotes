@@ -1,40 +1,27 @@
 const Promise = require('bluebird');
 const _ = require('lodash');
-const validator = require('validator');
 const models = require('../../models');
-const frontendRouting = require('../../../frontend/services/routing');
-const frontendSettings = require('../../../frontend/services/settings');
-const {i18n} = require('../../lib/common');
-const {BadRequestError, NoPermissionError, NotFoundError} = require('@tryghost/errors');
+const routeSettings = require('../../services/route-settings');
+const tpl = require('@tryghost/tpl');
+const {BadRequestError} = require('@tryghost/errors');
 const settingsService = require('../../services/settings');
-const settingsCache = require('../../services/settings/cache');
 const membersService = require('../../services/members');
+
+const settingsBREADService = settingsService.getSettingsBREADServiceInstance();
+
+const messages = {
+    failedSendingEmail: 'Failed Sending Email'
+    
+};
 
 module.exports = {
     docName: 'settings',
 
     browse: {
-        options: ['type', 'group'],
+        options: ['group'],
         permissions: true,
         query(frame) {
-            let settings = settingsCache.getAll();
-
-            // CASE: no context passed (functional call)
-            if (!frame.options.context) {
-                return Promise.resolve(settings.filter((setting) => {
-                    return setting.group === 'site';
-                }));
-            }
-
-            // CASE: omit core settings unless internal request
-            if (!frame.options.context.internal) {
-                settings = _.filter(settings, (setting) => {
-                    const isCore = setting.group === 'core';
-                    return !isCore;
-                });
-            }
-
-            return settings;
+            return settingsBREADService.browse(frame.options.context);
         }
     },
 
@@ -53,26 +40,7 @@ module.exports = {
             }
         },
         query(frame) {
-            let setting = settingsCache.get(frame.options.key, {resolve: false});
-
-            if (!setting) {
-                return Promise.reject(new NotFoundError({
-                    message: i18n.t('errors.api.settings.problemFindingSetting', {
-                        key: frame.options.key
-                    })
-                }));
-            }
-
-            // @TODO: handle in settings model permissible fn
-            if (setting.group === 'core' && !(frame.options.context && frame.options.context.internal)) {
-                return Promise.reject(new NoPermissionError({
-                    message: i18n.t('errors.api.settings.accessCoreSettingFromExtReq')
-                }));
-            }
-
-            return {
-                [frame.options.key]: setting
-            };
+            return settingsBREADService.read(frame.options.key, frame.options.context);
         }
     },
 
@@ -136,17 +104,7 @@ module.exports = {
         ],
         async query(frame) {
             const {email, type} = frame.data;
-            if (typeof email !== 'string' || !validator.isEmail(email)) {
-                throw new BadRequestError({
-                    message: i18n.t('errors.api.settings.invalidEmailReceived')
-                });
-            }
 
-            if (!type || !['fromAddressUpdate', 'supportAddressUpdate'].includes(type)) {
-                throw new BadRequestError({
-                    message: 'Invalid email type recieved'
-                });
-            }
             try {
                 // Send magic link to update fromAddress
                 await membersService.settings.sendEmailAddressUpdateMagicLink({
@@ -156,7 +114,7 @@ module.exports = {
             } catch (err) {
                 throw new BadRequestError({
                     err,
-                    message: i18n.t('errors.mail.failedSendingEmail.error')
+                    message: tpl(messages.failedSendingEmail)
                 });
             }
         }
@@ -174,6 +132,8 @@ module.exports = {
                 });
             }
 
+            await membersService.api.disconnectStripe();
+
             return models.Settings.edit([{
                 key: 'stripe_connect_publishable_key',
                 value: null
@@ -189,6 +149,12 @@ module.exports = {
             }, {
                 key: 'stripe_connect_account_id',
                 value: null
+            }, {
+                key: 'members_stripe_webhook_id',
+                value: null
+            }, {
+                key: 'members_stripe_webhook_secret',
+                value: null
             }], frame.options);
         }
     },
@@ -200,89 +166,23 @@ module.exports = {
         permissions: {
             unsafeAttrsObject(frame) {
                 return _.find(frame.data.settings, {key: 'labs'});
-            },
-            async before(frame) {
-                if (frame.options.context && frame.options.context.internal) {
-                    return;
-                }
-
-                const firstCoreSetting = frame.data.settings.find(setting => setting.group === 'core');
-                if (firstCoreSetting) {
-                    throw new NoPermissionError({
-                        message: i18n.t('errors.api.settings.accessCoreSettingFromExtReq')
-                    });
-                }
             }
         },
         async query(frame) {
+            let stripeConnectData;
             const stripeConnectIntegrationToken = frame.data.settings.find(setting => setting.key === 'stripe_connect_integration_token');
-
-            // The `stripe_connect_integration_token` "setting" is only used to set the `stripe_connect_*` settings.
-            const settings = frame.data.settings.filter((setting) => {
-                return ![
-                    'stripe_connect_integration_token',
-                    'stripe_connect_publishable_key',
-                    'stripe_connect_secret_key',
-                    'stripe_connect_livemode',
-                    'stripe_connect_account_id',
-                    'stripe_connect_display_name'
-                ].includes(setting.key);
-            });
-
-            const getSetting = setting => settingsCache.get(setting.key, {resolve: false});
-
-            const firstUnknownSetting = settings.find(setting => !getSetting(setting));
-
-            if (firstUnknownSetting) {
-                throw new NotFoundError({
-                    message: i18n.t('errors.api.settings.problemFindingSetting', {
-                        key: firstUnknownSetting.key
-                    })
-                });
-            }
-
-            if (!(frame.options.context && frame.options.context.internal)) {
-                const firstCoreSetting = settings.find(setting => getSetting(setting).group === 'core');
-                if (firstCoreSetting) {
-                    throw new NoPermissionError({
-                        message: i18n.t('errors.api.settings.accessCoreSettingFromExtReq')
-                    });
-                }
-            }
 
             if (stripeConnectIntegrationToken && stripeConnectIntegrationToken.value) {
                 const getSessionProp = prop => frame.original.session[prop];
-                try {
-                    const data = await membersService.stripeConnect.getStripeConnectTokenData(stripeConnectIntegrationToken.value, getSessionProp);
-                    settings.push({
-                        key: 'stripe_connect_publishable_key',
-                        value: data.public_key
-                    });
-                    settings.push({
-                        key: 'stripe_connect_secret_key',
-                        value: data.secret_key
-                    });
-                    settings.push({
-                        key: 'stripe_connect_livemode',
-                        value: data.livemode
-                    });
-                    settings.push({
-                        key: 'stripe_connect_display_name',
-                        value: data.display_name
-                    });
-                    settings.push({
-                        key: 'stripe_connect_account_id',
-                        value: data.account_id
-                    });
-                } catch (err) {
-                    throw new BadRequestError({
-                        err,
-                        message: 'The Stripe Connect token could not be parsed.'
-                    });
-                }
+
+                stripeConnectData = await settingsBREADService.getStripeConnectData(
+                    stripeConnectIntegrationToken,
+                    getSessionProp,
+                    membersService.stripeConnect.getStripeConnectTokenData
+                );
             }
 
-            return models.Settings.edit(settings, frame.options);
+            return await settingsBREADService.edit(frame.data.settings, frame.options, stripeConnectData);
         }
     },
 
@@ -294,8 +194,8 @@ module.exports = {
             method: 'edit'
         },
         async query(frame) {
-            await frontendRouting.settings.setFromFilePath(frame.file.path);
-            const getRoutesHash = () => frontendSettings.getCurrentHash('routes');
+            await routeSettings.api.setFromFilePath(frame.file.path);
+            const getRoutesHash = () => routeSettings.api.getCurrentHash();
             await settingsService.syncRoutesHash(getRoutesHash);
         }
     },
@@ -314,7 +214,7 @@ module.exports = {
             method: 'browse'
         },
         query() {
-            return frontendRouting.settings.get();
+            return routeSettings.api.get();
         }
     }
 };

@@ -1,10 +1,29 @@
 const models = require('../../models');
-const {i18n} = require('../../lib/common');
+const tpl = require('@tryghost/tpl');
 const errors = require('@tryghost/errors');
 const megaService = require('../../services/mega');
 
+const messages = {
+    emailNotFound: 'Email not found.',
+    retryNotAllowed: 'Only failed emails can be retried'
+};
+
 module.exports = {
     docName: 'emails',
+
+    browse: {
+        options: [
+            'limit',
+            'fields',
+            'filter',
+            'order',
+            'page'
+        ],
+        permissions: true,
+        async query(frame) {
+            return await models.Email.findPage(frame.options);
+        }
+    },
 
     read: {
         options: [
@@ -24,7 +43,7 @@ module.exports = {
                 .then((model) => {
                     if (!model) {
                         throw new errors.NotFoundError({
-                            message: i18n.t('errors.models.email.emailNotFound')
+                            message: tpl(messages.emailNotFound)
                         });
                     }
 
@@ -43,13 +62,13 @@ module.exports = {
                 .then(async (model) => {
                     if (!model) {
                         throw new errors.NotFoundError({
-                            message: i18n.t('errors.models.email.emailNotFound')
+                            message: tpl(messages.emailNotFound)
                         });
                     }
 
                     if (model.get('status') !== 'failed') {
                         throw new errors.IncorrectUsageError({
-                            message: i18n.t('errors.models.email.retryNotAllowed')
+                            message: tpl(messages.retryNotAllowed)
                         });
                     }
 

@@ -1,4 +1,4 @@
-const logging = require('../../../../../shared/logging');
+const logging = require('@tryghost/logging');
 
 module.exports = {
     config: {
@@ -35,6 +35,7 @@ module.exports = {
             value: bulkEmailSettings.baseUrl
         }];
 
+        // eslint-disable-next-line no-restricted-syntax
         for (const operation of operations) {
             logging.info(`Updating ${operation.key} setting's value, group, type & flags.`);
             await knex('settings')

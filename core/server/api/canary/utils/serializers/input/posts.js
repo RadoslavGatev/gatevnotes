@@ -1,5 +1,5 @@
 const _ = require('lodash');
-const debug = require('ghost-ignition').debug('api:canary:utils:serializers:input:posts');
+const debug = require('@tryghost/debug')('api:canary:utils:serializers:input:posts');
 const mapNQLKeyValues = require('@nexes/nql').utils.mapKeyValues;
 const url = require('./utils/url');
 const slugFilterOrder = require('./utils/slug-filter-order');
@@ -96,10 +96,26 @@ const forcePageFilter = (frame) => {
 
 const forceStatusFilter = (frame) => {
     if (!frame.options.filter) {
-        frame.options.filter = 'status:[draft,published,scheduled]';
+        frame.options.filter = 'status:[draft,published,scheduled,sent]';
     } else if (!frame.options.filter.match(/status:/)) {
-        frame.options.filter = `(${frame.options.filter})+status:[draft,published,scheduled]`;
+        frame.options.filter = `(${frame.options.filter})+status:[draft,published,scheduled,sent]`;
     }
+};
+
+const transformLegacyEmailRecipientFilters = (frame) => {
+    if (frame.options.email_recipient_filter === 'free') {
+        frame.options.email_recipient_filter = 'status:free';
+    }
+    if (frame.options.email_recipient_filter === 'paid') {
+        frame.options.email_recipient_filter = 'status:-free';
+    }
+};
+
+const transformPostVisibilityFilters = (frame) => {
+    if (frame.data.posts[0].visibility === 'filter' && frame.data.posts[0].visibility_filter) {
+        frame.data.posts[0].visibility = frame.data.posts[0].visibility_filter;
+    }
+    delete frame.data.posts[0].visibility_filter;
 };
 
 module.exports = {
@@ -107,10 +123,6 @@ module.exports = {
         debug('browse');
 
         forcePageFilter(frame);
-
-        if (frame.options.columns && frame.options.columns.includes('send_email_when_published')) {
-            frame.options.columns.push('email_recipient_filter');
-        }
 
         /**
          * ## current cases:
@@ -139,10 +151,6 @@ module.exports = {
         debug('read');
 
         forcePageFilter(frame);
-
-        if (frame.options.columns && frame.options.columns.includes('send_email_when_published')) {
-            frame.options.columns.push('email_recipient_filter');
-        }
 
         /**
          * ## current cases:
@@ -204,6 +212,8 @@ module.exports = {
             });
         }
 
+        transformPostVisibilityFilters(frame);
+        transformLegacyEmailRecipientFilters(frame);
         handlePostsMeta(frame);
         defaultFormat(frame);
         defaultRelations(frame);
@@ -213,7 +223,6 @@ module.exports = {
         debug('edit');
         this.add(apiConfig, frame, {add: false});
 
-        handlePostsMeta(frame);
         forceStatusFilter(frame);
         forcePageFilter(frame);
     },

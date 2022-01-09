@@ -2,15 +2,36 @@ const _ = require('lodash');
 const security = require('@tryghost/security');
 const constants = require('@tryghost/constants');
 const errors = require('@tryghost/errors');
-const {i18n} = require('../../lib/common');
+const tpl = require('@tryghost/tpl');
 const models = require('../../models');
 const urlUtils = require('../../../shared/url-utils');
 const mail = require('../mail');
 
+const messages = {
+    userNotFound: 'User not found.',
+    tokenLocked: 'Token locked',
+    resetPassword: 'Reset Password',
+    expired: {
+        message: 'Cannot reset password.',
+        context: 'Password reset link expired.',
+        help: 'Request a new password reset via the login form.'
+    },
+    invalidToken: {
+        message: 'Cannot reset password.',
+        context: 'Password reset link has already been used.',
+        help: 'Request a new password reset via the login form.'
+    },
+    corruptedToken: {
+        message: 'Cannot reset password.',
+        context: 'Invalid password reset link.',
+        help: 'Check if password reset link has been fully copied or request new password reset via the login form.'
+    }
+};
+
 const tokenSecurity = {};
 
-function generateToken(email, settingsAPI) {
-    const options = {context: {internal: true}};
+function generateToken(email, settingsAPI, transaction) {
+    const options = {context: {internal: true}, transacting: transaction};
     let dbHash;
     let token;
 
@@ -22,7 +43,7 @@ function generateToken(email, settingsAPI) {
         })
         .then((user) => {
             if (!user) {
-                throw new errors.NotFoundError({message: i18n.t('errors.api.users.userNotFound')});
+                throw new errors.NotFoundError({message: tpl(messages.userNotFound)});
             }
 
             token = security.tokens.resetToken.generateHash({
@@ -48,9 +69,9 @@ function extractTokenParts(options) {
 
     if (!tokenParts) {
         return Promise.reject(new errors.UnauthorizedError({
-            message: i18n.t('errors.api.passwordReset.corruptedToken.message'),
-            context: i18n.t('errors.api.passwordReset.corruptedToken.context'),
-            help: i18n.t('errors.api.passwordReset.corruptedToken.help')
+            message: tpl(messages.corruptedToken.message),
+            context: tpl(messages.corruptedToken.context),
+            help: tpl(messages.corruptedToken.help)
         }));
     }
 
@@ -62,7 +83,7 @@ function protectBruteForce({options, tokenParts}) {
     if (tokenSecurity[`${tokenParts.email}+${tokenParts.expires}`] &&
         tokenSecurity[`${tokenParts.email}+${tokenParts.expires}`].count >= 10) {
         return Promise.reject(new errors.NoPermissionError({
-            message: i18n.t('errors.models.user.tokenLocked')
+            message: tpl(messages.tokenLocked)
         }));
     }
 
@@ -85,7 +106,7 @@ function doReset(options, tokenParts, settingsAPI) {
         })
         .then((user) => {
             if (!user) {
-                throw new errors.NotFoundError({message: i18n.t('errors.api.users.userNotFound')});
+                throw new errors.NotFoundError({message: tpl(messages.userNotFound)});
             }
 
             let compareResult = security.tokens.resetToken.compare({
@@ -98,15 +119,15 @@ function doReset(options, tokenParts, settingsAPI) {
                 let error;
                 if (compareResult.reason === 'expired' || compareResult.reason === 'invalid_expiry') {
                     error = new errors.BadRequestError({
-                        message: i18n.t('errors.api.passwordReset.expired.message'),
-                        context: i18n.t('errors.api.passwordReset.expired.context'),
-                        help: i18n.t('errors.api.passwordReset.expired.help')
+                        message: tpl(messages.expired.message),
+                        context: tpl(messages.expired.context),
+                        help: tpl(messages.expired.help)
                     });
                 } else {
                     error = new errors.BadRequestError({
-                        message: i18n.t('errors.api.passwordReset.invalidToken.message'),
-                        context: i18n.t('errors.api.passwordReset.invalidToken.context'),
-                        help: i18n.t('errors.api.passwordReset.invalidToken.help')
+                        message: tpl(messages.invalidToken.message),
+                        context: tpl(messages.invalidToken.context),
+                        help: tpl(messages.invalidToken.help)
                     });
                 }
 
@@ -127,7 +148,7 @@ function doReset(options, tokenParts, settingsAPI) {
             return Promise.reject(err);
         })
         .catch((err) => {
-            if (errors.utils.isIgnitionError(err)) {
+            if (errors.utils.isGhostError(err)) {
                 return Promise.reject(err);
             }
             return Promise.reject(new errors.UnauthorizedError({err: err}));
@@ -138,11 +159,13 @@ async function sendResetNotification(data, mailAPI) {
     const adminUrl = urlUtils.urlFor('admin', true);
     const resetToken = security.url.encodeBase64(data.resetToken);
     const resetUrl = urlUtils.urlJoin(adminUrl, 'reset', resetToken, '/');
+    const emailData = {
+        resetUrl: resetUrl,
+        recipientEmail: data.email
+    };
 
     const content = await mail.utils.generateContent({
-        data: {
-            resetUrl
-        },
+        data: emailData,
         template: 'reset-password'
     });
 
@@ -150,7 +173,7 @@ async function sendResetNotification(data, mailAPI) {
         mail: [{
             message: {
                 to: data.email,
-                subject: i18n.t('common.api.authentication.mail.resetPassword'),
+                subject: tpl(messages.resetPassword),
                 html: content.html,
                 text: content.text
             },

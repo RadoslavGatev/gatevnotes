@@ -1,10 +1,19 @@
 const _ = require('lodash');
 const config = require('../../../shared/config');
 const errors = require('@tryghost/errors');
-const {i18n} = require('../../lib/common');
-const logging = require('../../../shared/logging');
+const tpl = require('@tryghost/tpl');
+const logging = require('@tryghost/logging');
 const models = require('../../models');
 const mail = require('../mail');
+
+const messages = {
+    setupAlreadyCompleted: 'Setup has already been completed.',
+    setupMustBeCompleted: 'Setup must be completed before making this request.',
+    setupUnableToRun: 'Database missing fixture data. Please reset database and try again.',
+    sampleBlogDescription: 'Thoughts, stories and ideas.',
+    yourNewGhostBlog: 'Your New Ghost Site',
+    unableToSendWelcomeEmail: 'Unable to send welcome email, your site will continue to function.'
+};
 
 /**
  * Returns setup status
@@ -29,8 +38,8 @@ function assertSetupCompleted(status) {
             return __;
         }
 
-        const completed = i18n.t('errors.api.authentication.setupAlreadyCompleted');
-        const notCompleted = i18n.t('errors.api.authentication.setupMustBeCompleted');
+        const completed = tpl(messages.setupAlreadyCompleted);
+        const notCompleted = tpl(messages.setupMustBeCompleted);
 
         function throwReason(reason) {
             throw new errors.NoPermissionError({message: reason});
@@ -50,8 +59,8 @@ async function setupUser(userData) {
     const owner = await models.User.findOne({role: 'Owner', status: 'all'});
 
     if (!owner) {
-        throw new errors.GhostError({
-            message: i18n.t('errors.api.authentication.setupUnableToRun')
+        throw new errors.InternalServerError({
+            message: tpl(messages.setupUnableToRun)
         });
     }
 
@@ -76,12 +85,36 @@ async function doSettings(data, settingsAPI) {
 
     userSettings = [
         {key: 'title', value: blogTitle.trim()},
-        {key: 'description', value: i18n.t('common.api.authentication.sampleBlogDescription')}
+        {key: 'description', value: tpl(messages.sampleBlogDescription)}
     ];
 
     await settingsAPI.edit({settings: userSettings}, context);
 
     return user;
+}
+
+async function doProduct(data, productsAPI) {
+    const context = {context: {user: data.user.id}};
+    const user = data.user;
+    const blogTitle = data.userData.blogTitle;
+
+    if (!blogTitle || typeof blogTitle !== 'string') {
+        return user;
+    }
+    try {
+        const page = await productsAPI.browse({limit: 1});
+
+        const [product] = page.products;
+        if (!product) {
+            return data;
+        }
+
+        productsAPI.edit({products: [{name: blogTitle.trim()}]}, {context: context.context, id: product.id});
+    } catch (e) {
+        return data;
+    }
+
+    return data;
 }
 
 function sendWelcomeEmail(email, mailAPI) {
@@ -94,7 +127,7 @@ function sendWelcomeEmail(email, mailAPI) {
             .then((content) => {
                 const message = {
                     to: email,
-                    subject: i18n.t('common.api.authentication.mail.yourNewGhostBlog'),
+                    subject: tpl(messages.yourNewGhostBlog),
                     html: content.html,
                     text: content.text
                 };
@@ -108,7 +141,7 @@ function sendWelcomeEmail(email, mailAPI) {
 
                 mailAPI.send(payload, {context: {internal: true}})
                     .catch((err) => {
-                        err.context = i18n.t('errors.api.authentication.unableToSendWelcomeEmail');
+                        err.context = tpl(messages.unableToSendWelcomeEmail);
                         logging.error(err);
                     });
             });
@@ -121,5 +154,6 @@ module.exports = {
     assertSetupCompleted: assertSetupCompleted,
     setupUser: setupUser,
     doSettings: doSettings,
+    doProduct: doProduct,
     sendWelcomeEmail: sendWelcomeEmail
 };

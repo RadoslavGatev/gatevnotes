@@ -1,13 +1,17 @@
-const {events} = require('../../../server/lib/common');
 const IndexMapGenerator = require('./index-generator');
 const PagesMapGenerator = require('./page-generator');
 const PostsMapGenerator = require('./post-generator');
 const UsersMapGenerator = require('./user-generator');
 const TagsMapGenerator = require('./tag-generator');
 
+// This uses events from the routing service and the URL service
+const events = require('../../../server/lib/common/events');
+
 class SiteMapManager {
     constructor(options) {
         options = options || {};
+
+        options.maxPerPage = options.maxPerPage || 50000;
 
         this.pages = options.pages || this.createPagesGenerator(options);
         this.posts = options.posts || this.createPostsGenerator(options);
@@ -41,14 +45,15 @@ class SiteMapManager {
         });
     }
 
-    createIndexGenerator() {
+    createIndexGenerator(options) {
         return new IndexMapGenerator({
             types: {
                 pages: this.pages,
                 posts: this.posts,
                 authors: this.authors,
                 tags: this.tags
-            }
+            },
+            maxPerPage: options.maxPerPage
         });
     }
 
@@ -72,8 +77,8 @@ class SiteMapManager {
         return this.index.getXml();
     }
 
-    getSiteMapXml(type) {
-        return this[type].getXml();
+    getSiteMapXml(type, page) {
+        return this[type].getXml(page);
     }
 }
 

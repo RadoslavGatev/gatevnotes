@@ -1,12 +1,17 @@
 const config = require('../../../shared/config');
-const logging = require('../../../shared/logging');
 const db = require('../../data/db');
-const settings = require('../settings/cache');
-const EmailAnalyticsService = require('./email-analytics');
+const settings = require('../../../shared/settings-cache');
+const {EmailAnalyticsService} = require('@tryghost/email-analytics-service');
+const EventProcessor = require('./lib/event-processor');
+const MailgunProvider = require('@tryghost/email-analytics-provider-mailgun');
+const queries = require('./lib/queries');
 
 module.exports = new EmailAnalyticsService({
     config,
-    logging,
-    db,
-    settings
+    settings,
+    eventProcessor: new EventProcessor({db}),
+    providers: [
+        new MailgunProvider({config, settings})
+    ],
+    queries
 });

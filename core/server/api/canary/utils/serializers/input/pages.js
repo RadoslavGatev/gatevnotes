@@ -1,5 +1,5 @@
 const _ = require('lodash');
-const debug = require('ghost-ignition').debug('api:canary:utils:serializers:input:pages');
+const debug = require('@tryghost/debug')('api:canary:utils:serializers:input:pages');
 const mapNQLKeyValues = require('@nexes/nql').utils.mapKeyValues;
 const mobiledoc = require('../../../../../lib/mobiledoc');
 const url = require('./utils/url');
@@ -102,6 +102,13 @@ const forceStatusFilter = (frame) => {
     }
 };
 
+const transformPageVisibilityFilters = (frame) => {
+    if (frame.data.pages[0].visibility === 'filter' && frame.data.pages[0].visibility_filter) {
+        frame.data.pages[0].visibility = frame.data.pages[0].visibility_filter;
+    }
+    delete frame.data.pages[0].visibility_filter;
+};
+
 module.exports = {
     browse(apiConfig, frame) {
         debug('browse');
@@ -180,6 +187,7 @@ module.exports = {
             });
         }
 
+        transformPageVisibilityFilters(frame);
         handlePostsMeta(frame);
         defaultFormat(frame);
         defaultRelations(frame);
@@ -189,7 +197,6 @@ module.exports = {
         debug('edit');
         this.add(...arguments, {add: false});
 
-        handlePostsMeta(frame);
         forceStatusFilter(frame);
         forcePageFilter(frame);
     },

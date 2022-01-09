@@ -1,7 +1,7 @@
 const postScheduling = require('./post-scheduling');
 
 /**
- * @description Initialise all scheduler modules.
+ * @description Initialize all scheduler modules.
  *
  * We currently only support post-scheduling: publish posts/pages when scheduled.
  *
@@ -9,5 +9,5 @@ const postScheduling = require('./post-scheduling');
  * @param {string} options.apiUrl - Target Ghost API url
  */
 exports.init = function init(options) {
-    return postScheduling.init(options);
+    return postScheduling(options);
 };

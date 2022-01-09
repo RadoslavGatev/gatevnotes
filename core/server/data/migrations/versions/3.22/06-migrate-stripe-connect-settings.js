@@ -1,4 +1,4 @@
-const logging = require('../../../../../shared/logging');
+const logging = require('@tryghost/logging');
 const ObjectId = require('bson-objectid').default;
 
 module.exports = {
@@ -20,6 +20,7 @@ module.exports = {
             key: 'stripe_connect_account_id'
         }];
 
+        // eslint-disable-next-line no-restricted-syntax
         for (const operation of defaultOperations) {
             logging.info(`Updating ${operation.key} setting group,type,flags`);
             await knex('settings')
@@ -62,6 +63,7 @@ module.exports = {
             value: stripeConnectIntegration.account_id || ''
         }];
 
+        // eslint-disable-next-line no-restricted-syntax
         for (const operation of valueOperations) {
             logging.info(`Updating ${operation.key} setting value`);
             await knex('settings')
@@ -103,7 +105,7 @@ module.exports = {
         logging.info(`Inserting stripe_connect_integration setting`);
         await knex('settings')
             .insert({
-                id: ObjectId.generate(),
+                id: ObjectId().toHexString(),
                 key: 'stripe_connect_integration',
                 value: JSON.stringify(stripeConnectIntegration),
                 group: 'members',

@@ -1,7 +1,61 @@
 const _ = require('lodash');
 const url = require('./utils/url');
 const typeGroupMapper = require('../../../../shared/serializers/input/utils/settings-filter-type-group-mapper');
-const settingsCache = require('../../../../../services/settings/cache');
+const settingsCache = require('../../../../../../shared/settings-cache');
+const {WRITABLE_KEYS_ALLOWLIST} = require('../../../../../../shared/labs');
+
+const DEPRECATED_SETTINGS = [
+    'bulk_email_settings',
+    'slack'
+];
+
+const deprecatedSupportedSettingsOneToManyMap = {
+    slack: [{
+        from: '[0].url',
+        to: {
+            key: 'slack_url',
+            group: 'slack',
+            type: 'string'
+        }
+    }, {
+        from: '[0].username',
+        to: {
+            key: 'slack_username',
+            group: 'slack',
+            type: 'string'
+        }
+    }]
+};
+
+const getMappedDeprecatedSettings = (settings) => {
+    const mappedSettings = [];
+
+    for (const key in deprecatedSupportedSettingsOneToManyMap) {
+        const deprecatedSetting = settings.find(setting => setting.key === key);
+
+        if (deprecatedSetting) {
+            let deprecatedSettingValue;
+
+            try {
+                deprecatedSettingValue = JSON.parse(deprecatedSetting.value);
+            } catch (err) {
+                // ignore the value if it's invalid
+            }
+
+            if (deprecatedSettingValue) {
+                deprecatedSupportedSettingsOneToManyMap[key].forEach(({from, to}) => {
+                    const value = _.get(deprecatedSettingValue, from);
+                    mappedSettings.push({
+                        key: to.key,
+                        value: value
+                    });
+                });
+            }
+        }
+    }
+
+    return mappedSettings;
+};
 
 module.exports = {
     browse(apiConfig, frame) {
@@ -32,6 +86,10 @@ module.exports = {
         if (frame.options.key === 'default_locale') {
             frame.options.key = 'lang';
         }
+
+        if (frame.options.key === 'locale') {
+            frame.options.key = 'lang';
+        }
     },
 
     edit(apiConfig, frame) {
@@ -48,8 +106,14 @@ module.exports = {
             return !settingFlagsArr.includes('RO');
         });
 
-        frame.data.settings = frame.data.settings.filter((setting) => {
-            return setting.key !== 'bulk_email_settings';
+        const mappedDeprecatedSettings = getMappedDeprecatedSettings(frame.data.settings);
+        mappedDeprecatedSettings.forEach((setting) => {
+            // NOTE: give priority for non-deprecated setting values if they exist
+            const nonDeprecatedExists = frame.data.settings.find(s => s.key === setting.key);
+
+            if (!nonDeprecatedExists) {
+                frame.data.settings.push(setting);
+            }
         });
 
         frame.data.settings.forEach((setting) => {
@@ -59,11 +123,13 @@ module.exports = {
             const settingType = settings[setting.key] ? settings[setting.key].type : '';
 
             //TODO: Needs to be removed once we get rid of all `object` type settings
+            // NOTE: this transformation is more related to the fact that internal API calls call
+            //       settings API with plain objects instead of stringified ones
             if (_.isObject(setting.value)) {
                 setting.value = JSON.stringify(setting.value);
             }
 
-            // @TODO: handle these transformations in a centralised API place (these rules should apply for ALL resources)
+            // @TODO: handle these transformations in a centralized API place (these rules should apply for ALL resources)
 
             // CASE: Ensure we won't forward strings, otherwise model events or model interactions can fail
             if (settingType === 'boolean' && (setting.value === '0' || setting.value === '1')) {
@@ -91,9 +157,34 @@ module.exports = {
                 setting.key = 'lang';
             }
 
-            if (['cover_image', 'icon', 'logo', 'portal_button_icon'].includes(setting.key)) {
-                setting = url.forSetting(setting);
+            if (setting.key === 'locale') {
+                setting.key = 'lang';
             }
+
+            if (setting.key === 'labs') {
+                const inputLabsValue = JSON.parse(setting.value);
+                const filteredLabsValue = {};
+
+                for (const flag in inputLabsValue) {
+                    if (WRITABLE_KEYS_ALLOWLIST.includes(flag)) {
+                        filteredLabsValue[flag] = inputLabsValue[flag];
+                    }
+                }
+
+                setting.value = JSON.stringify(filteredLabsValue);
+            }
+
+            setting = url.forSetting(setting);
+        });
+
+        // Ignore all deprecated settings
+        frame.data.settings = frame.data.settings.filter((setting) => {
+            // NOTE: ignore old unsplash object notation
+            if (setting.key === 'unsplash' && _.isObject(setting.value)) {
+                return true;
+            }
+
+            return DEPRECATED_SETTINGS.includes(setting.key) === false;
         });
     }
 };

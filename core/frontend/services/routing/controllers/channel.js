@@ -1,10 +1,14 @@
 const _ = require('lodash');
-const debug = require('ghost-ignition').debug('services:routing:controllers:channel');
-const {i18n} = require('../../../../server/lib/common');
+const debug = require('@tryghost/debug')('services:routing:controllers:channel');
+const tpl = require('@tryghost/tpl');
 const errors = require('@tryghost/errors');
 const security = require('@tryghost/security');
-const themes = require('../../themes');
+const themeEngine = require('../../theme-engine');
 const helpers = require('../helpers');
+
+const messages = {
+    pageNotFound: 'Page not found.'
+};
 
 /**
  * @description Channel controller.
@@ -28,7 +32,7 @@ module.exports = function channelController(req, res, next) {
         // CASE 1: routes.yaml `limit` is stronger than theme definition
         // CASE 2: use `posts_per_page` config from theme as `limit` value
         if (res.routerOptions.limit) {
-            themes.getActive().updateTemplateOptions({
+            themeEngine.getActive().updateTemplateOptions({
                 data: {
                     config: {
                         posts_per_page: res.routerOptions.limit
@@ -38,7 +42,7 @@ module.exports = function channelController(req, res, next) {
 
             pathOptions.limit = res.routerOptions.limit;
         } else {
-            const postsPerPage = parseInt(themes.getActive().config('posts_per_page'));
+            const postsPerPage = parseInt(themeEngine.getActive().config('posts_per_page'));
 
             if (!isNaN(postsPerPage) && postsPerPage > 0) {
                 pathOptions.limit = postsPerPage;
@@ -51,7 +55,7 @@ module.exports = function channelController(req, res, next) {
             // CASE: requested page is greater than number of pages we have
             if (pathOptions.page > result.meta.pagination.pages) {
                 return next(new errors.NotFoundError({
-                    message: i18n.t('errors.errors.pageNotFound')
+                    message: tpl(messages.pageNotFound)
                 }));
             }
 

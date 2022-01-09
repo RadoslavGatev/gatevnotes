@@ -1,9 +1,9 @@
-const debug = require('ghost-ignition').debug('importer:posts');
+const debug = require('@tryghost/debug')('importer:posts');
 const _ = require('lodash');
 const uuid = require('uuid');
 const BaseImporter = require('./base');
 const mobiledocLib = require('../../../../lib/mobiledoc');
-const validation = require('../../../validation');
+const validator = require('@tryghost/validator');
 const postsMetaSchema = require('../../../schema').tables.posts_meta;
 const metaAttrs = _.keys(_.omit(postsMetaSchema, ['id']));
 
@@ -20,7 +20,7 @@ class PostsImporter extends BaseImporter {
 
     sanitizeAttributes() {
         _.each(this.dataToImport, (obj) => {
-            if (!validation.validator.isUUID(obj.uuid || '')) {
+            if (!validator.isUUID(obj.uuid || '')) {
                 obj.uuid = uuid.v4();
             }
 
@@ -50,7 +50,9 @@ class PostsImporter extends BaseImporter {
      */
     sanitizePostsMeta(model) {
         let postsMetaFromFile = _.find(this.requiredFromFile.posts_meta, {post_id: model.id}) || _.pick(model, metaAttrs);
-        let postsMetaData = Object.assign({}, _.mapValues(postsMetaSchema, () => null), postsMetaFromFile);
+        let postsMetaData = Object.assign({}, _.mapValues(postsMetaSchema, (value) => {
+            return Reflect.has(value, 'defaultTo') ? value.defaultTo : null;
+        }), postsMetaFromFile);
         model.posts_meta = postsMetaData;
         _.each(metaAttrs, (attr) => {
             delete model[attr];
@@ -202,7 +204,7 @@ class PostsImporter extends BaseImporter {
             // CASE 1: you are importing old editor posts
             // CASE 2: you are importing Koenig Beta posts
             // CASE 3: you are importing Koenig 2.0 posts
-            if (model.mobiledoc || (model.mobiledoc && model.html && model.html.match(/^<div class="kg-card-markdown">/))) {
+            if (model.mobiledoc) {
                 let mobiledoc;
 
                 try {
@@ -216,7 +218,18 @@ class PostsImporter extends BaseImporter {
                     mobiledoc = mobiledocLib.blankDocument;
                 }
 
+                // ghostVersion was introduced in 4.0. Any earlier content won't have it set
+                // so we should set it to "3.0" to match rendering output
+                if (!mobiledoc.ghostVersion) {
+                    mobiledoc.ghostVersion = '3.0';
+                }
+
                 mobiledoc.cards.forEach((card) => {
+                    // Ghost 1.0 markdown card = 'card-markdown', Ghost 2.0 markdown card = 'markdown'
+                    if (card[0] === 'card-markdown') {
+                        card[0] = 'markdown';
+                    }
+
                     // Koenig Beta = imageStyle, Ghost 2.0 Koenig = cardWidth
                     if (card[0] === 'image' && card[1].imageStyle) {
                         card[1].cardWidth = card[1].imageStyle;

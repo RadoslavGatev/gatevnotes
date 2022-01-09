@@ -1,12 +1,21 @@
 const _ = require('lodash');
 const xml = require('xml');
 const config = require('../../shared/config');
-const urlService = require('../../frontend/services/url');
+const urlService = require('./url');
 const errors = require('@tryghost/errors');
-const {events, i18n} = require('../lib/common');
-const logging = require('../../shared/logging');
-const request = require('../lib/request');
-const settingsCache = require('./settings/cache');
+const tpl = require('@tryghost/tpl');
+const logging = require('@tryghost/logging');
+const request = require('@tryghost/request');
+const settingsCache = require('../../shared/settings-cache');
+const sentry = require('../../shared/sentry');
+
+// Used to receive post.published model event
+const events = require('../lib/common/events');
+
+const messages = {
+    requestFailedError: 'The {service} service was unable to send a ping request, your site will continue to function.',
+    requestFailedHelp: 'If you get this error repeatedly, please seek help on {url}.'
+};
 
 const defaultPostSlugs = [
     'welcome',
@@ -78,16 +87,28 @@ function ping(post) {
                 if (!goodResponse.test(res.body)) {
                     const matches = res.body.match(errorMessage);
                     const message = matches ? matches[1] : res.body;
-                    throw new Error(message);
+                    throw new errors.InternalServerError({message});
                 }
             })
             .catch(function (err) {
-                logging.error(new errors.GhostError({
-                    err: err,
-                    message: err.message,
-                    context: i18n.t('errors.services.ping.requestFailed.error', {service: 'xmlrpc'}),
-                    help: i18n.t('errors.services.ping.requestFailed.help', {url: 'https://ghost.org/docs/'})
-                }));
+                let error;
+                if (err.statusCode === 429) {
+                    error = new errors.TooManyRequestsError({
+                        err,
+                        message: err.message,
+                        context: tpl(messages.requestFailedError, {service: 'xmlrpc'}),
+                        help: tpl(messages.requestFailedHelp, {url: 'https://ghost.org/docs/'})
+                    });
+                } else {
+                    error = new errors.InternalServerError({
+                        err: err,
+                        message: err.message,
+                        context: tpl(messages.requestFailedError, {service: 'xmlrpc'}),
+                        help: tpl(messages.requestFailedHelp, {url: 'https://ghost.org/docs/'})
+                    });
+                }
+                logging.error(error);
+                sentry.captureException(error);
             });
     });
 }

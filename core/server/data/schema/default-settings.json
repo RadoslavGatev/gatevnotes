@@ -65,7 +65,7 @@
             "type": "string"
         },
         "description": {
-            "defaultValue": "The professional publishing platform",
+            "defaultValue": "Thoughts, stories and ideas",
             "validations": {
                 "isLength": {
                     "max": 200
@@ -75,11 +75,11 @@
             "type": "string"
         },
         "logo": {
-            "defaultValue": "https://static.ghost.org/v1.0.0/images/ghost-logo.svg",
+            "defaultValue": "",
             "type": "string"
         },
         "cover_image": {
-            "defaultValue": "https://static.ghost.org/v3.0.0/images/publication-cover.png",
+            "defaultValue": "https://static.ghost.org/v4.0.0/images/publication-cover.jpg",
             "type": "string"
         },
         "icon": {
@@ -87,8 +87,11 @@
             "type": "string"
         },
         "accent_color": {
-            "defaultValue": "",
+            "defaultValue": "#FF1A75",
             "flags": "PUBLIC",
+            "validations": {
+                "isEmpty": false
+            },
             "type": "string"
         },
         "lang": {
@@ -119,15 +122,15 @@
             "type": "string"
         },
         "twitter": {
-            "defaultValue": "ghost",
+            "defaultValue": "@ghost",
             "type": "string"
         },
         "navigation": {
-            "defaultValue": "[{\"label\":\"Home\", \"url\":\"/\"},{\"label\":\"Tag\", \"url\":\"/tag/getting-started/\"}, {\"label\":\"Author\", \"url\":\"/author/ghost/\"},{\"label\":\"Help\", \"url\":\"https://ghost.org/docs/\"}]",
+            "defaultValue": "[{\"label\":\"Home\",\"url\":\"/\"},{\"label\":\"About\",\"url\":\"/about/\"},{\"label\":\"Collection\",\"url\":\"/tag/getting-started/\"},{\"label\":\"Author\",\"url\":\"/author/ghost/\"},{\"label\":\"Portal\",\"url\":\"/portal/\"}]",
             "type": "array"
         },
         "secondary_navigation": {
-            "defaultValue": "[]",
+            "defaultValue": "[{\"label\":\"Data & privacy\",\"url\":\"/privacy/\"},{\"label\":\"Contact\",\"url\":\"/contact/\"},{\"label\":\"Contribute →\",\"url\":\"/contribute/\"}]",
             "type": "array"
         },
         "meta_title": {
@@ -232,13 +235,13 @@
             "defaultValue": "public",
             "type": "string"
         },
-        "members_allow_free_signup": {
-            "defaultValue": "true",
+        "members_signup_access": {
+            "defaultValue": "all",
             "validations": {
                 "isEmpty": false,
-                "isIn": [["true", "false"]]
+                "isIn": [["all", "invite", "none"]]
             },
-            "type": "boolean"
+            "type": "string"
         },
         "members_from_address": {
             "defaultValue": "noreply",
@@ -279,7 +282,7 @@
             "type": "string"
         },
         "stripe_plans": {
-            "defaultValue": "[{\"name\":\"Monthly\",\"currency\":\"usd\",\"interval\":\"month\",\"amount\":500},{\"name\":\"Yearly\",\"currency\":\"usd\",\"interval\":\"year\",\"amount\":5000}]",
+            "defaultValue": "[]",
             "type": "array"
         },
         "stripe_connect_publishable_key": {
@@ -299,6 +302,22 @@
             "type": "string"
         },
         "stripe_connect_account_id": {
+            "defaultValue": null,
+            "type": "string"
+        },
+        "members_free_price_name": {
+            "defaultValue": "Free",
+            "type": "string"
+        },
+        "members_free_price_description": {
+            "defaultValue": "Free preview",
+            "type": "string"
+        },
+        "members_monthly_price_id": {
+            "defaultValue": null,
+            "type": "string"
+        },
+        "members_yearly_price_id": {
             "defaultValue": null,
             "type": "string"
         }
@@ -321,7 +340,11 @@
             "type": "boolean"
         },
         "portal_plans": {
-            "defaultValue": "[\"free\", \"monthly\", \"yearly\"]",
+            "defaultValue": "[\"free\"]",
+            "type": "array"
+        },
+        "portal_products": {
+            "defaultValue": "[]",
             "type": "array"
         },
         "portal_button_style": {
@@ -361,6 +384,15 @@
                 "isIn": [["true", "false"]]
             },
             "type": "boolean"
+        },
+        "email_verification_required": {
+            "defaultValue": "false",
+            "validations": {
+                "isEmpty": false,
+                "isIn": [["true", "false"]]
+            },
+            "type": "boolean",
+            "flags": "RO"
         }
     },
     "amp": {
@@ -376,6 +408,24 @@
             "type": "string"
         }
     },
+    "firstpromoter": {
+        "firstpromoter": {
+            "defaultValue": "false",
+            "validations": {
+                "isIn": [
+                    [
+                        "true",
+                        "false"
+                    ]
+                ]
+            },
+            "type": "boolean"
+        },
+        "firstpromoter_id": {
+            "defaultValue": null,
+            "type": "string"
+        }
+    },
     "labs": {
         "labs": {
             "defaultValue": "{}",
@@ -383,15 +433,23 @@
         }
     },
     "slack": {
-        "slack": {
-            "defaultValue": "[{\"url\":\"\", \"username\":\"Ghost\"}]",
-            "type": "array"
+        "slack_url": {
+            "defaultValue": "",
+            "type": "string"
+        },
+        "slack_username": {
+            "defaultValue": "Ghost",
+            "type": "string"
         }
     },
     "unsplash": {
         "unsplash": {
-            "defaultValue": "{\"isActive\": true}",
-            "type": "object"
+            "defaultValue": "true",
+            "validations": {
+                "isEmpty": false,
+                "isIn": [["true", "false"]]
+            },
+            "type": "boolean"
         }
     },
     "views": {
@@ -414,7 +472,68 @@
             },
             "type": "boolean"
         },
-        "newsletter_show_header": {
+        "newsletter_header_image": {
+            "defaultValue": null,
+            "validations": {
+                "isLength": {
+                    "max": 2000
+                }
+            },
+            "type": "string"
+        },
+        "newsletter_show_header_icon": {
+            "defaultValue": "true",
+            "validations": {
+                "isEmpty": false,
+                "isIn": [
+                    [
+                        "true",
+                        "false"
+                    ]
+                ]
+            },
+            "type": "boolean"
+        },
+        "newsletter_show_header_title": {
+            "defaultValue": "true",
+            "validations": {
+                "isEmpty": false,
+                "isIn": [
+                    [
+                        "true",
+                        "false"
+                    ]
+                ]
+            },
+            "type": "boolean"
+        },
+        "newsletter_title_alignment": {
+            "defaultValue": "center",
+            "validations": {
+                "isEmpty": false,
+                "isIn": [
+                    [
+                        "center",
+                        "left"
+                    ]
+                ]
+            },
+            "type": "string"
+        },
+        "newsletter_title_font_category": {
+            "defaultValue": "sans_serif",
+            "validations": {
+                "isEmpty": false,
+                "isIn": [
+                    [
+                        "serif",
+                        "sans_serif"
+                    ]
+                ]
+            },
+            "type": "string"
+        },
+        "newsletter_show_feature_image": {
             "defaultValue": "true",
             "validations": {
                 "isEmpty": false,
@@ -443,6 +562,42 @@
         "newsletter_footer_content": {
             "defaultValue": "",
             "type": "string"
+        }
+    },
+    "oauth": {
+        "oauth_client_id" : {
+            "defaultValue": null,
+            "type": "string"
+        },
+        "oauth_client_secret" : {
+            "defaultValue": null,
+            "type": "string"
+        }
+    },
+    "editor": {
+        "editor_default_email_recipients": {
+            "defaultValue": "visibility",
+            "type": "string",
+            "validations": {
+                "isEmpty": false,
+                "isIn": [[
+                    "disabled",
+                    "visibility",
+                    "filter"
+                ]]
+            }
+        },
+        "editor_default_email_recipients_filter": {
+            "defaultValue": "all",
+            "type": "string"
+        },
+        "editor_is_launch_complete": {
+            "defaultValue": "false",
+            "validations": {
+                "isEmpty": false,
+                "isIn": [["true", "false"]]
+            },
+            "type": "boolean"
         }
     }
 }

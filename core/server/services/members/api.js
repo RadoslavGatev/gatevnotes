@@ -1,14 +1,18 @@
-const settingsCache = require('../settings/cache');
+const stripeService = require('../stripe');
+const settingsCache = require('../../../shared/settings-cache');
 const MembersApi = require('@tryghost/members-api');
-const logging = require('../../../shared/logging');
+const logging = require('@tryghost/logging');
 const mail = require('../mail');
 const models = require('../../models');
 const signinEmail = require('./emails/signin');
 const signupEmail = require('./emails/signup');
+const signupPaidEmail = require('./emails/signup-paid');
 const subscribeEmail = require('./emails/subscribe');
 const updateEmail = require('./emails/updateEmail');
 const SingleUseTokenProvider = require('./SingleUseTokenProvider');
 const urlUtils = require('../../../shared/url-utils');
+const labsService = require('../../../shared/labs');
+const offersService = require('../offers');
 
 const MAGIC_LINK_TOKEN_VALIDITY = 24 * 60 * 60 * 1000;
 
@@ -46,6 +50,8 @@ function createApiInstance(config) {
                     return `📫 Confirm your subscription to ${siteTitle}`;
                 case 'signup':
                     return `🙌 Complete your sign up to ${siteTitle}!`;
+                case 'signup-paid':
+                    return `🙌 Thank you for signing up to ${siteTitle}!`;
                 case 'updateEmail':
                     return `📫 Confirm your email update for ${siteTitle}!`;
                 case 'signin':
@@ -67,7 +73,6 @@ function createApiInstance(config) {
                         For your security, the link will expire in 24 hours time.
 
                         All the best!
-                        The team at ${siteTitle}
 
                         ---
 
@@ -78,19 +83,35 @@ function createApiInstance(config) {
                     return `
                         Hey there!
 
-                        Thanks for signing up for ${siteTitle} — use this link to complete the sign up process and be automatically signed in:
+                        Tap the link below to complete the signup process for ${siteTitle}, and be automatically signed in:
 
                         ${url}
 
                         For your security, the link will expire in 24 hours time.
 
                         See you soon!
-                        The team at ${siteTitle}
 
                         ---
 
                         Sent to ${email}
                         If you did not make this request, you can simply delete this message. You will not be signed up, and no account will be created for you.
+                        `;
+                case 'signup-paid':
+                    return `
+                        Hey there!
+
+                        Thank you for subscribing to ${siteTitle}. Tap the link below to be automatically signed in:
+
+                        ${url}
+
+                        For your security, the link will expire in 24 hours time.
+
+                        See you soon!
+
+                        ---
+
+                        Sent to ${email}
+                        Thank you for subscribing to ${siteTitle}!
                         `;
                 case 'updateEmail':
                     return `
@@ -119,7 +140,6 @@ function createApiInstance(config) {
                         For your security, the link will expire in 24 hours time.
 
                         See you soon!
-                        The team at ${siteTitle}
 
                         ---
 
@@ -133,12 +153,14 @@ function createApiInstance(config) {
                 const siteUrl = urlUtils.urlFor('home', true);
                 const domain = urlUtils.urlFor('home', true).match(new RegExp('^https?://([^/:?#]+)(?:[/:?#]|$)', 'i'));
                 const siteDomain = (domain && domain[1]);
-                const accentColor = settingsCache.get('accent_color') || '#15212A';
+                const accentColor = settingsCache.get('accent_color');
                 switch (type) {
                 case 'subscribe':
                     return subscribeEmail({url, email, siteTitle, accentColor, siteDomain, siteUrl});
                 case 'signup':
                     return signupEmail({url, email, siteTitle, accentColor, siteDomain, siteUrl});
+                case 'signup-paid':
+                    return signupPaidEmail({url, email, siteTitle, accentColor, siteDomain, siteUrl});
                 case 'updateEmail':
                     return updateEmail({url, email, siteTitle, accentColor, siteDomain, siteUrl});
                 case 'signin':
@@ -168,9 +190,25 @@ function createApiInstance(config) {
             },
             StripeCustomer: models.MemberStripeCustomer,
             StripeCustomerSubscription: models.StripeCustomerSubscription,
-            Member: models.Member
+            Member: models.Member,
+            MemberSubscribeEvent: models.MemberSubscribeEvent,
+            MemberPaidSubscriptionEvent: models.MemberPaidSubscriptionEvent,
+            MemberLoginEvent: models.MemberLoginEvent,
+            MemberEmailChangeEvent: models.MemberEmailChangeEvent,
+            MemberPaymentEvent: models.MemberPaymentEvent,
+            MemberStatusEvent: models.MemberStatusEvent,
+            MemberProductEvent: models.MemberProductEvent,
+            MemberAnalyticEvent: models.MemberAnalyticEvent,
+            OfferRedemption: models.OfferRedemption,
+            Offer: models.Offer,
+            StripeProduct: models.StripeProduct,
+            StripePrice: models.StripePrice,
+            Product: models.Product,
+            Settings: models.Settings
         },
-        logger: logging
+        stripeAPIService: stripeService.api,
+        offersAPI: offersService.api,
+        labsService: labsService
     });
 
     return membersApiInstance;

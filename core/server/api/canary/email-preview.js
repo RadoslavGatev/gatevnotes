@@ -1,14 +1,23 @@
 const models = require('../../models');
-const {i18n} = require('../../lib/common');
+const tpl = require('@tryghost/tpl');
 const errors = require('@tryghost/errors');
 const mega = require('../../services/mega');
+
+const messages = {
+    postNotFound: 'Post not found.'
+};
+
+const emailPreview = new mega.EmailPreview({
+    apiVersion: 'canary'
+});
 
 module.exports = {
     docName: 'email_preview',
 
     read: {
         options: [
-            'fields'
+            'fields',
+            'memberSegment'
         ],
         validation: {
             options: {
@@ -20,30 +29,19 @@ module.exports = {
             'status'
         ],
         permissions: true,
-        query(frame) {
+        async query(frame) {
             const options = Object.assign(frame.options, {formats: 'html,plaintext', withRelated: ['authors', 'posts_meta']});
             const data = Object.assign(frame.data, {status: 'all'});
-            return models.Post.findOne(data, options)
-                .then((model) => {
-                    if (!model) {
-                        throw new errors.NotFoundError({
-                            message: i18n.t('errors.api.posts.postNotFound')
-                        });
-                    }
 
-                    return mega.postEmailSerializer.serialize(model, {isBrowserPreview: true}).then((emailContent) => {
-                        const replacements = mega.postEmailSerializer.parseReplacements(emailContent);
+            const model = await models.Post.findOne(data, options);
 
-                        replacements.forEach((replacement) => {
-                            emailContent[replacement.format] = emailContent[replacement.format].replace(
-                                replacement.match,
-                                replacement.fallback || ''
-                            );
-                        });
-
-                        return emailContent;
-                    });
+            if (!model) {
+                throw new errors.NotFoundError({
+                    message: tpl(messages.postNotFound)
                 });
+            }
+
+            return emailPreview.generateEmailContent(model, frame.options.memberSegment);
         }
     },
     sendTestEmail: {
@@ -63,21 +61,15 @@ module.exports = {
         async query(frame) {
             const options = Object.assign(frame.options, {status: 'all'});
             let model = await models.Post.findOne(options, {withRelated: ['authors']});
+
             if (!model) {
                 throw new errors.NotFoundError({
-                    message: i18n.t('errors.api.posts.postNotFound')
+                    message: tpl(messages.postNotFound)
                 });
             }
-            const {emails = []} = frame.data;
-            const response = await mega.mega.sendTestEmail(model, emails);
-            if (response && response[0] && response[0].error) {
-                throw new errors.EmailError({
-                    statusCode: response[0].error.statusCode,
-                    message: response[0].error.message,
-                    context: response[0].error.originalMessage
-                });
-            }
-            return response;
+
+            const {emails = [], memberSegment} = frame.data;
+            return await mega.mega.sendTestEmail(model, emails, 'canary', memberSegment);
         }
     }
 };

@@ -1,13 +1,21 @@
 const errors = require('@tryghost/errors');
-const {events, i18n} = require('../lib/common');
-const logging = require('../../shared/logging');
-const request = require('../lib/request');
+const tpl = require('@tryghost/tpl');
+const logging = require('@tryghost/logging');
+const request = require('@tryghost/request');
 const {blogIcon} = require('../lib/image');
 const urlUtils = require('../../shared/url-utils');
-const urlService = require('../../frontend/services/url');
-const settingsCache = require('./settings/cache');
+const urlService = require('./url');
+const settingsCache = require('../../shared/settings-cache');
 const schema = require('../data/schema').checks;
 const moment = require('moment');
+
+// Used to receive post.published model event, but also the slack.test event from the API which iirc this was done to avoid circular deps a long time ago
+const events = require('../lib/common/events');
+
+const messages = {
+    requestFailedError: 'The {service} service was unable to send a ping request, your site will continue to function.',
+    requestFailedHelp: 'If you get this error repeatedly, please seek help on {url}.'
+};
 
 const defaultPostSlugs = [
     'welcome',
@@ -20,10 +28,13 @@ const defaultPostSlugs = [
 ];
 
 function getSlackSettings() {
-    const setting = settingsCache.get('slack');
-    // This might one day have multiple entries, for now its always a array
-    // and we return the first item or an empty object
-    return setting ? setting[0] : {};
+    const username = settingsCache.get('slack_username');
+    const url = settingsCache.get('slack_url');
+
+    return {
+        username,
+        url
+    };
 }
 
 function ping(post) {
@@ -125,10 +136,10 @@ function ping(post) {
                 'Content-type': 'application/json'
             }
         }).catch(function (err) {
-            logging.error(new errors.GhostError({
+            logging.error(new errors.InternalServerError({
                 err: err,
-                context: i18n.t('errors.services.ping.requestFailed.error', {service: 'slack'}),
-                help: i18n.t('errors.services.ping.requestFailed.help', {url: 'https://ghost.org/docs/'})
+                context: tpl(messages.requestFailedError, {service: 'slack'}),
+                help: tpl(messages.requestFailedHelp, {url: 'https://ghost.org/docs/'})
             }));
         });
     }

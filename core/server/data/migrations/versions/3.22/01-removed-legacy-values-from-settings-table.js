@@ -1,5 +1,5 @@
 const ObjectId = require('bson-objectid');
-const logging = require('../../../../../shared/logging');
+const logging = require('@tryghost/logging');
 
 module.exports = {
     config: {
@@ -21,7 +21,7 @@ module.exports = {
         const currentTimestamp = options.transacting.raw('CURRENT_TIMESTAMP');
 
         const forceI18nSetting = {
-            id: ObjectId.generate(),
+            id: ObjectId().toHexString(),
             key: 'force_i18n',
             value: 'true',
             type: 'blog',
@@ -32,7 +32,7 @@ module.exports = {
         };
 
         const permalinksSetting = {
-            id: ObjectId.generate(),
+            id: ObjectId().toHexString(),
             key: 'permalinks',
             value: '/:slug/',
             type: 'blog',
@@ -43,7 +43,7 @@ module.exports = {
         };
 
         const membersSessionSecretSetting = {
-            id: ObjectId.generate(),
+            id: ObjectId().toHexString(),
             key: 'members_session_secret',
             value: null,
             type: 'members',

@@ -4,7 +4,7 @@ const errors = require('@tryghost/errors');
 
 if (sentryConfig && !sentryConfig.disabled) {
     const Sentry = require('@sentry/node');
-    const version = require('../server/lib/ghost-version').full;
+    const version = require('../../package.json').version;
     const environment = config.get('env');
     Sentry.init({
         dsn: sentryConfig.dsn,
@@ -18,7 +18,7 @@ if (sentryConfig && !sentryConfig.disabled) {
             shouldHandleError(error) {
                 // Sometimes non-Ghost issues will come into here but they won't
                 // have a statusCode so we should always handle them
-                if (!errors.utils.isIgnitionError(error)) {
+                if (!errors.utils.isGhostError(error)) {
                     return true;
                 }
 

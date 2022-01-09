@@ -1,5 +1,5 @@
 //@ts-check
-const debug = require('ghost-ignition').debug('api:canary:utils:serializers:output:members');
+const debug = require('@tryghost/debug')('api:canary:utils:serializers:output:members');
 const {unparse} = require('@tryghost/members-csv');
 
 module.exports = {
@@ -10,11 +10,18 @@ module.exports = {
     edit: createSerializer('edit', singleMember),
     add: createSerializer('add', singleMember),
     editSubscription: createSerializer('editSubscription', singleMember),
-
+    createSubscription: createSerializer('createSubscription', singleMember),
+    bulkDestroy: createSerializer('bulkDestroy', passthrough),
+    bulkEdit: createSerializer('bulkEdit', bulkAction),
     exportCSV: createSerializer('exportCSV', exportCSV),
 
     importCSV: createSerializer('importCSV', passthrough),
-    stats: createSerializer('stats', passthrough)
+    stats: createSerializer('stats', passthrough),
+    memberStats: createSerializer('memberStats', passthrough),
+    mrrStats: createSerializer('mrrStats', passthrough),
+    subscriberStats: createSerializer('subscriberStats', passthrough),
+    grossVolumeStats: createSerializer('grossVolumeStats', passthrough),
+    activityFeed: createSerializer('activityFeed', passthrough)
 };
 
 /**
@@ -47,6 +54,29 @@ function singleMember(model, _apiConfig, frame) {
 }
 
 /**
+ * @param {object} bulkActionResult
+ * @param {APIConfig} _apiConfig
+ * @param {Frame} frame
+ *
+ * @returns {{bulk: SerializedBulkAction}}
+ */
+function bulkAction(bulkActionResult, _apiConfig, frame) {
+    return {
+        bulk: {
+            action: frame.data.action,
+            meta: {
+                stats: {
+                    successful: bulkActionResult.successful,
+                    unsuccessful: bulkActionResult.unsuccessful
+                },
+                errors: bulkActionResult.errors,
+                unsuccessfulData: bulkActionResult.unsuccessfulData
+            }
+        }
+    };
+}
+
+/**
  * @template PageMeta
  *
  * @param {{data: import('bookshelf').Model[], meta: PageMeta}} page
@@ -70,24 +100,13 @@ function exportCSV(page, _apiConfig, frame) {
  * @returns {SerializedMember}
  */
 function serializeMember(member, options) {
-    const json = member.toJSON(options);
+    const json = member.toJSON ? member.toJSON(options) : member;
 
-    let comped = false;
-    if (json.stripe && json.stripe.subscriptions) {
-        const hasCompedSubscription = !!json.stripe.subscriptions.find(
-            /**
-             * @param {SerializedMemberStripeSubscription} sub
-             */
-            function (sub) {
-                return sub.plan.nickname === 'Complimentary' && sub.status === 'active';
-            }
-        );
-        if (hasCompedSubscription) {
-            comped = true;
-        }
-    }
+    const comped = json.status === 'comped';
 
-    return {
+    const subscriptions = json.subscriptions || [];
+
+    const serialized = {
         id: json.id,
         uuid: json.uuid,
         email: json.email,
@@ -98,14 +117,21 @@ function serializeMember(member, options) {
         created_at: json.created_at,
         updated_at: json.updated_at,
         labels: json.labels,
-        stripe: json.stripe,
+        subscriptions: subscriptions,
         avatar_image: json.avatar_image,
         comped: comped,
         email_count: json.email_count,
         email_opened_count: json.email_opened_count,
         email_open_rate: json.email_open_rate,
-        email_recipients: json.email_recipients
+        email_recipients: json.email_recipients,
+        status: json.status
     };
+
+    if (json.products) {
+        serialized.products = json.products;
+    }
+
+    return serialized;
 }
 
 /**
@@ -145,13 +171,22 @@ function createSerializer(debugString, serialize) {
  * @prop {string} created_at
  * @prop {string} updated_at
  * @prop {string[]} labels
- * @prop {null|SerializedMemberStripeData} stripe
+ * @prop {SerializedMemberStripeSubscription[]} subscriptions
+ * @prop {SerializedMemberProduct[]=} products
  * @prop {string} avatar_image
  * @prop {boolean} comped
  * @prop {number} email_count
  * @prop {number} email_opened_count
  * @prop {number} email_open_rate
  * @prop {null|SerializedEmailRecipient[]} email_recipients
+ * @prop {'free'|'paid'} status
+ */
+
+/**
+ * @typedef {Object} SerializedMemberProduct
+ * @prop {string} id
+ * @prop {string} name
+ * @prop {string} slug
  */
 
 /**
@@ -174,12 +209,16 @@ function createSerializer(debugString, serialize) {
  * @prop {null|string} customer.name
  * @prop {string} customer.email
  *
- * @prop {Object} plan
- * @prop {string} plan.id
- * @prop {string} plan.nickname
- * @prop {number} plan.amount
- * @prop {string} plan.currency
- * @prop {string} plan.currency_symbol
+ * @prop {Object} price
+ * @prop {string} price.id
+ * @prop {string} price.nickname
+ * @prop {number} price.amount
+ * @prop {string} price.interval
+ * @prop {string} price.currency
+ *
+ * @prop {Object} price.product
+ * @prop {string} price.product.id
+ * @prop {string} price.product.product_id
  */
 
 /**
@@ -222,6 +261,21 @@ function createSerializer(debugString, serialize) {
  * @prop {string} created_by
  * @prop {string} updated_at
  * @prop {string} updated_by
+ */
+
+/**
+ *
+ * @typedef {Object} SerializedBulkAction
+ *
+ * @prop {string} action
+ *
+ * @prop {object} meta
+ * @prop {object[]} meta.unsuccessfulData
+ * @prop {Error[]} meta.errors
+ * @prop {object} meta.stats
+ *
+ * @prop {number} meta.stats.successful
+ * @prop {number} meta.stats.unsuccessful
  */
 
 /**

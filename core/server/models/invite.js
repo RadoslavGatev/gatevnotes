@@ -1,11 +1,19 @@
 const Promise = require('bluebird');
 const _ = require('lodash');
-const {i18n} = require('../lib/common');
+const tpl = require('@tryghost/tpl');
 const errors = require('@tryghost/errors');
 const constants = require('@tryghost/constants');
 const security = require('@tryghost/security');
-const settingsCache = require('../services/settings/cache');
+const settingsCache = require('../../shared/settings-cache');
+const limitService = require('../services/limits');
 const ghostBookshelf = require('./base');
+
+const messages = {
+    notEnoughPermission: 'You do not have permission to perform this action',
+    roleNotFound: 'Role not found',
+    notAllowedToInviteOwner: 'Not allowed to invite an owner user.',
+    notAllowedToInvite: 'Not allowed to invite this role.'
+};
 
 let Invite;
 let Invites;
@@ -43,7 +51,7 @@ Invite = ghostBookshelf.Model.extend({
         return ghostBookshelf.Model.add.call(this, data, options);
     },
 
-    permissible(inviteModel, action, context, unsafeAttrs, loadedPermissions, hasUserPermission, hasApiKeyPermission) {
+    async permissible(inviteModel, action, context, unsafeAttrs, loadedPermissions, hasUserPermission, hasApiKeyPermission) {
         const isAdd = (action === 'add');
 
         if (!isAdd) {
@@ -52,24 +60,30 @@ Invite = ghostBookshelf.Model.extend({
             }
 
             return Promise.reject(new errors.NoPermissionError({
-                message: i18n.t('errors.models.invite.notEnoughPermission')
+                message: tpl(messages.notEnoughPermission)
             }));
         }
 
         // CASE: make sure user is allowed to add a user with this role
         return ghostBookshelf.model('Role')
             .findOne({id: unsafeAttrs.role_id})
-            .then((roleToInvite) => {
+            .then(async (roleToInvite) => {
                 if (!roleToInvite) {
                     return Promise.reject(new errors.NotFoundError({
-                        message: i18n.t('errors.api.invites.roleNotFound')
+                        message: tpl(messages.roleNotFound)
                     }));
                 }
 
                 if (roleToInvite.get('name') === 'Owner') {
                     return Promise.reject(new errors.NoPermissionError({
-                        message: i18n.t('errors.api.invites.notAllowedToInviteOwner')
+                        message: tpl(messages.notAllowedToInviteOwner)
                     }));
+                }
+
+                if (isAdd && limitService.isLimited('staff') && roleToInvite.get('name') !== 'Contributor') {
+                    // CASE: if your site is limited to a certain number of staff users
+                    // Inviting a new user requires we check we won't go over the limit
+                    await limitService.errorIfWouldGoOverLimit('staff');
                 }
 
                 let allowed = [];
@@ -83,7 +97,7 @@ Invite = ghostBookshelf.Model.extend({
 
                 if (allowed.indexOf(roleToInvite.get('name')) === -1) {
                     throw new errors.NoPermissionError({
-                        message: i18n.t('errors.api.invites.notAllowedToInvite')
+                        message: tpl(messages.notAllowedToInvite)
                     });
                 }
 
@@ -92,7 +106,7 @@ Invite = ghostBookshelf.Model.extend({
                 }
 
                 return Promise.reject(new errors.NoPermissionError({
-                    message: i18n.t('errors.models.invite.notEnoughPermission')
+                    message: tpl(messages.notEnoughPermission)
                 }));
             });
     }

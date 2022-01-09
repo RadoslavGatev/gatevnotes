@@ -1,4 +1,4 @@
-const logging = require('../../../../../shared/logging');
+const logging = require('@tryghost/logging');
 const ObjectId = require('bson-objectid').default;
 
 module.exports = {
@@ -33,7 +33,7 @@ module.exports = {
         logging.info(`Restoring bulk_email_settings setting from mailgun settings`);
         await knex('settings')
             .insert({
-                id: ObjectId.generate(),
+                id: ObjectId().toHexString(),
                 key: 'bulk_email_settings',
                 value: JSON.stringify(bulkEmailSettings),
                 group: 'email',

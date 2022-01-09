@@ -1,19 +1,32 @@
 const _ = require('lodash');
 const Promise = require('bluebird');
-const debug = require('ghost-ignition').debug('mega');
+const debug = require('@tryghost/debug')('mega');
+const tpl = require('@tryghost/tpl');
 const url = require('url');
 const moment = require('moment');
 const ObjectID = require('bson-objectid');
 const errors = require('@tryghost/errors');
-const {events, i18n} = require('../../lib/common');
-const logging = require('../../../shared/logging');
-const settingsCache = require('../settings/cache');
+const logging = require('@tryghost/logging');
+const settingsCache = require('../../../shared/settings-cache');
 const membersService = require('../members');
+const limitService = require('../limits');
 const bulkEmailService = require('../bulk-email');
-const jobService = require('../jobs');
+const jobsService = require('../jobs');
 const db = require('../../data/db');
 const models = require('../../models');
 const postEmailSerializer = require('./post-email-serializer');
+const {getSegmentsFromHtml} = require('./segment-parser');
+
+// Used to listen to email.added and email.edited model events originally, I think to offload this - ideally would just use jobs now if possible
+const events = require('../../lib/common/events');
+
+const messages = {
+    invalidSegment: 'Invalid segment value. Use one of the valid:"status:free" or "status:-free" values.',
+    unexpectedFilterError: 'Unexpected {property} value "{value}", expected an NQL equivalent',
+    noneFilterError: 'Cannot send email to "none" {property}',
+    emailSendingDisabled: `Email sending is temporarily disabled because your account is currently in review. You should have an email about this from us already, but you can also reach us any time at support@ghost.org`,
+    sendEmailRequestFailed: 'The email service was unable to send an email batch.'
+};
 
 const getFromAddress = () => {
     let fromAddress = membersService.config.getEmailFromAddress();
@@ -37,6 +50,12 @@ const getReplyToAddress = () => {
     return (replyAddressOption === 'support') ? supportAddress : fromAddress;
 };
 
+/**
+ *
+ * @param {Object} postModel - post model instance
+ * @param {Object} options
+ * @param {ValidAPIVersion} options.apiVersion - api version to be used when serializing email data
+ */
 const getEmailData = async (postModel, options) => {
     const {subject, html, plaintext} = await postEmailSerializer.serialize(postModel, options);
 
@@ -49,16 +68,26 @@ const getEmailData = async (postModel, options) => {
     };
 };
 
-const sendTestEmail = async (postModel, toEmails) => {
-    const emailData = await getEmailData(postModel);
+/**
+ *
+ * @param {Object} postModel - post model instance
+ * @param {[string]} toEmails - member email addresses to send email to
+ * @param {ValidAPIVersion} apiVersion - api version to be used when serializing email data
+ * @param {ValidMemberSegment} [memberSegment]
+ */
+const sendTestEmail = async (postModel, toEmails, apiVersion, memberSegment) => {
+    let emailData = await getEmailData(postModel, {apiVersion});
     emailData.subject = `[Test] ${emailData.subject}`;
 
+    if (memberSegment) {
+        emailData = postEmailSerializer.renderEmailForSegment(emailData, memberSegment);
+    }
     // fetch any matching members so that replacements use expected values
     const recipients = await Promise.all(toEmails.map(async (email) => {
         const member = await membersService.api.members.get({email});
         if (member) {
             return {
-                member_uuid: member.get('id'),
+                member_uuid: member.get('uuid'),
                 member_email: member.get('email'),
                 member_name: member.get('name')
             };
@@ -78,7 +107,47 @@ const sendTestEmail = async (postModel, toEmails) => {
         return Promise.reject(response.error);
     }
 
+    if (response && response[0] && response[0].error) {
+        return Promise.reject(new errors.EmailError({
+            statusCode: response[0].error.statusCode,
+            message: response[0].error.message,
+            context: response[0].error.originalMessage
+        }));
+    }
+
     return response;
+};
+
+/**
+ * transformRecipientFilter
+ *
+ * Accepts a filter string, errors on unexpected legacy filter syntax and enforces subscribed:true
+ *
+ * @param {string} emailRecipientFilter NQL filter for members
+ * @param {object} options
+ */
+const transformEmailRecipientFilter = (emailRecipientFilter, {errorProperty = 'email_recipient_filter'} = {}) => {
+    switch (emailRecipientFilter) {
+    // `paid` and `free` were swapped out for NQL filters in 4.5.0, we shouldn't see them here now
+    case 'paid':
+    case 'free':
+        throw new errors.InternalServerError({
+            message: tpl(messages.unexpectedFilterError, {
+                property: errorProperty,
+                value: emailRecipientFilter
+            })
+        });
+    case 'all':
+        return 'subscribed:true';
+    case 'none':
+        throw new errors.InternalServerError({
+            message: tpl(messages.noneFilterError, {
+                property: errorProperty
+            })
+        });
+    default:
+        return `subscribed:true+(${emailRecipientFilter})`;
+    }
 };
 
 /**
@@ -88,28 +157,26 @@ const sendTestEmail = async (postModel, toEmails) => {
  * record per post
  *
  * @param {object} postModel Post Model Object
+ * @param {object} options
+ * @param {ValidAPIVersion} options.apiVersion - api version to be used when serializing email data
  */
 
 const addEmail = async (postModel, options) => {
+    if (limitService.isLimited('emails')) {
+        await limitService.errorIfWouldGoOverLimit('emails');
+    }
+
+    if (settingsCache.get('email_verification_required') === true) {
+        throw new errors.HostLimitError({
+            message: tpl(messages.emailSendingDisabled)
+        });
+    }
+
     const knexOptions = _.pick(options, ['transacting', 'forUpdate']);
-    const filterOptions = Object.assign({}, knexOptions, {filter: 'subscribed:true', limit: 1});
+    const filterOptions = Object.assign({}, knexOptions, {limit: 1});
 
     const emailRecipientFilter = postModel.get('email_recipient_filter');
-
-    switch (emailRecipientFilter) {
-    case 'paid':
-        filterOptions.paid = true;
-        break;
-    case 'free':
-        filterOptions.paid = false;
-        break;
-    case 'all':
-        break;
-    case 'none':
-        throw new Error('Cannot sent email to "none" email_recipient_filter');
-    default:
-        throw new Error(`Unknown email_recipient_filter ${emailRecipientFilter}`);
-    }
+    filterOptions.filter = transformEmailRecipientFilter(emailRecipientFilter, {errorProperty: 'email_recipient_filter'});
 
     const startRetrieve = Date.now();
     debug('addEmail: retrieving members count');
@@ -121,13 +188,17 @@ const addEmail = async (postModel, options) => {
         return null;
     }
 
+    if (limitService.isLimited('emails')) {
+        await limitService.errorIfWouldGoOverLimit('emails', {addedCount: membersCount});
+    }
+
     const postId = postModel.get('id');
     const existing = await models.Email.findOne({post_id: postId}, knexOptions);
 
     if (!existing) {
         // get email contents and perform replacements using no member data so
         // we have a decent snapshot of email content for later display
-        const emailData = await getEmailData(postModel);
+        const emailData = await getEmailData(postModel, options);
 
         return models.Email.add({
             post_id: postId,
@@ -225,7 +296,11 @@ async function pendingEmailHandler(emailModel, options) {
     const emailAnalyticsJobs = require('../email-analytics/jobs');
     emailAnalyticsJobs.scheduleRecurringJobs();
 
-    return jobService.addJob(sendEmailJob, {emailModel});
+    return jobsService.addJob({
+        job: sendEmailJob,
+        data: {emailModel},
+        offloaded: false
+    });
 }
 
 async function sendEmailJob({emailModel, options}) {
@@ -234,7 +309,14 @@ async function sendEmailJob({emailModel, options}) {
     try {
         // Check host limit for allowed member count and throw error if over limit
         // - do this even if it's a retry so that there's no way around the limit
-        await membersService.checkHostLimit();
+        if (limitService.isLimited('members')) {
+            await limitService.errorIfIsOverLimit('members');
+        }
+
+        // Check host limit for disabled emails or going over emails limit
+        if (limitService.isLimited('emails')) {
+            await limitService.errorIfWouldGoOverLimit('emails');
+        }
 
         // Create email batch and recipient rows unless this is a retry and they already exist
         const existingBatchCount = await emailModel.related('emailBatches').count('id');
@@ -243,7 +325,7 @@ async function sendEmailJob({emailModel, options}) {
             let newBatchCount;
 
             await models.Base.transaction(async (transacting) => {
-                newBatchCount = await createEmailBatches({emailModel, options: {transacting}});
+                newBatchCount = await createSegmentedEmailBatches({emailModel, options: {transacting}});
             });
 
             if (newBatchCount === 0) {
@@ -270,35 +352,34 @@ async function sendEmailJob({emailModel, options}) {
             error: errorMessage
         }, {patch: true});
 
-        throw new errors.GhostError({
+        throw new errors.InternalServerError({
             err: error,
-            context: i18n.t('errors.services.mega.requestFailed.error')
+            context: tpl(messages.sendEmailRequestFailed)
         });
     }
 }
 
-// Fetch rows of members that should receive an email.
-// Uses knex directly rather than bookshelf to avoid thousands of bookshelf model
-// instantiations and associated processing and event loop blocking
-async function getEmailMemberRows({emailModel, options}) {
+/**
+ * Fetch rows of members that should receive an email.
+ * Uses knex directly rather than bookshelf to avoid thousands of bookshelf model
+ * instantiations and associated processing and event loop blocking
+ *
+ * @param {Object} options
+ * @param {Object} options.emailModel - instance of Email model
+ * @param {string} [options.memberSegment] - NQL filter to apply in addition to the one defined in emailModel
+ * @param {Object} options.options - knex options
+ *
+ * @returns {Promise<Object[]>} instances of filtered knex member rows
+ */
+async function getEmailMemberRows({emailModel, memberSegment, options}) {
     const knexOptions = _.pick(options, ['transacting', 'forUpdate']);
+    const filterOptions = Object.assign({}, knexOptions);
 
-    // TODO: this will clobber a user-assigned filter if/when we allow emails to be sent to filtered member lists
-    const filterOptions = Object.assign({}, knexOptions, {filter: 'subscribed:true'});
+    const recipientFilter = transformEmailRecipientFilter(emailModel.get('recipient_filter'), {errorProperty: 'recipient_filter'});
+    filterOptions.filter = recipientFilter;
 
-    const recipientFilter = emailModel.get('recipient_filter');
-
-    switch (recipientFilter) {
-    case 'paid':
-        filterOptions.paid = true;
-        break;
-    case 'free':
-        filterOptions.paid = false;
-        break;
-    case 'all':
-        break;
-    default:
-        throw new Error(`Unknown recipient_filter ${recipientFilter}`);
+    if (memberSegment) {
+        filterOptions.filter = `${filterOptions.filter}+${memberSegment}`;
     }
 
     const startRetrieve = Date.now();
@@ -311,20 +392,101 @@ async function getEmailMemberRows({emailModel, options}) {
     return memberRows;
 }
 
-// Store email_batch and email_recipient records for an email.
-// Uses knex directly rather than bookshelf to avoid thousands of bookshelf model
-// instantiations and associated processing and event loop blocking.
-// Returns array of batch ids
-async function createEmailBatches({emailModel, options}) {
-    const memberRows = await getEmailMemberRows({emailModel, options});
+/**
+ * Partitions array of member records according to the segment they belong to
+ *
+ * @param {Object[]} memberRows raw member rows to partition
+ * @param {string[]} segments segment filters to partition batches by
+ *
+ * @returns {Object} partitioned memberRows with keys that correspond segment names
+ */
+function partitionMembersBySegment(memberRows, segments) {
+    const partitions = {};
+
+    for (const memberSegment of segments) {
+        let segmentedMemberRows;
+
+        // NOTE: because we only support two types of segments at the moment the logic was kept dead simple
+        //       in the future this segmentation should probably be substituted with NQL:
+        //       memberRows.filter(member => nql(memberSegment).queryJSON(member));
+        if (memberSegment === 'status:free') {
+            segmentedMemberRows = memberRows.filter(member => member.status === 'free');
+            memberRows = memberRows.filter(member => member.status !== 'free');
+        } else if (memberSegment === 'status:-free') {
+            segmentedMemberRows = memberRows.filter(member => member.status !== 'free');
+            memberRows = memberRows.filter(member => member.status === 'free');
+        } else {
+            throw new errors.ValidationError({
+                message: tpl(messages.invalidSegment)
+            });
+        }
+
+        partitions[memberSegment] = segmentedMemberRows;
+    }
+
+    if (memberRows.length) {
+        partitions.unsegmented = memberRows;
+    }
+
+    return partitions;
+}
+
+/**
+ * Detects segment filters in emailModel's html and creates separate batches per segment
+ *
+ * @param {Object} options
+ * @param {Object} options.emailModel - instance of Email model
+ * @param {Object} options.options - knex options
+ */
+async function createSegmentedEmailBatches({emailModel, options}) {
+    let memberRows = await getEmailMemberRows({emailModel, options});
 
     if (!memberRows.length) {
         return [];
     }
 
+    const segments = getSegmentsFromHtml(emailModel.get('html'));
+    const batchIds = [];
+
+    if (segments.length) {
+        const partitionedMembers = partitionMembersBySegment(memberRows, segments);
+
+        for (const partition in partitionedMembers) {
+            const emailBatchIds = await createEmailBatches({
+                emailModel,
+                memberRows: partitionedMembers[partition],
+                memberSegment: partition === 'unsegmented' ? null : partition,
+                options
+            });
+            batchIds.push(emailBatchIds);
+        }
+    } else {
+        const emailBatchIds = await createEmailBatches({emailModel, memberRows, options});
+        batchIds.push(emailBatchIds);
+    }
+
+    return batchIds;
+}
+
+/**
+ * Store email_batch and email_recipient records for an email.
+ * Uses knex directly rather than bookshelf to avoid thousands of bookshelf model
+ * instantiations and associated processing and event loop blocking.
+ *
+ * @param {Object} options
+ * @param {Object} options.emailModel - instance of Email model
+ * @param {string} [options.memberSegment] - NQL filter to apply in addition to the one defined in emailModel
+ * @param {Object[]} [options.memberRows] - member rows to be batched
+ * @param {Object} options.options - knex options
+ * @returns {Promise<string[]>} - created batch ids
+ */
+async function createEmailBatches({emailModel, memberRows, memberSegment, options}) {
     const storeRecipientBatch = async function (recipients) {
         const knexOptions = _.pick(options, ['transacting', 'forUpdate']);
-        const batchModel = await models.EmailBatch.add({email_id: emailModel.id}, knexOptions);
+        const batchModel = await models.EmailBatch.add({
+            email_id: emailModel.id,
+            member_segment: memberSegment
+        }, knexOptions);
 
         const recipientData = [];
 
@@ -335,7 +497,7 @@ async function createEmailBatches({emailModel, options}) {
             }
 
             recipientData.push({
-                id: ObjectID.generate(),
+                id: ObjectID().toHexString(),
                 email_id: emailModel.id,
                 member_id: memberRow.id,
                 batch_id: batchModel.id,
@@ -386,5 +548,14 @@ module.exports = {
     addEmail,
     retryFailedEmail,
     sendTestEmail,
-    handleUnsubscribeRequest
+    handleUnsubscribeRequest,
+    // NOTE: below are only exposed for testing purposes
+    _transformEmailRecipientFilter: transformEmailRecipientFilter,
+    _partitionMembersBySegment: partitionMembersBySegment,
+    _getEmailMemberRows: getEmailMemberRows
 };
+
+/**
+ * @typedef {'v2' | 'v3' | 'v4' | 'canary' } ValidAPIVersion
+ * @typedef {'status:free' | 'status:-free'} ValidMemberSegment
+ */

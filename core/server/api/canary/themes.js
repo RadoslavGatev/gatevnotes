@@ -1,6 +1,9 @@
-const {events} = require('../../lib/common');
-const themeService = require('../../../frontend/services/themes');
+const themeService = require('../../services/themes');
+const limitService = require('../../services/limits');
 const models = require('../../models');
+
+// Used to emit theme.uploaded which is used in core/server/analytics-events
+const events = require('../../lib/common/events');
 
 module.exports = {
     docName: 'themes',
@@ -8,7 +11,7 @@ module.exports = {
     browse: {
         permissions: true,
         query() {
-            return themeService.getJSON();
+            return themeService.api.getJSON();
         }
     },
 
@@ -27,22 +30,62 @@ module.exports = {
             }
         },
         permissions: true,
-        query(frame) {
+        async query(frame) {
             let themeName = frame.options.name;
+
+            if (limitService.isLimited('customThemes')) {
+                await limitService.errorIfWouldGoOverLimit('customThemes', {value: themeName});
+            }
+
             const newSettings = [{
                 key: 'active_theme',
                 value: themeName
             }];
 
-            return themeService.activate(themeName)
+            return themeService.api.activate(themeName)
                 .then((checkedTheme) => {
                     // @NOTE: we use the model, not the API here, as we don't want to trigger permissions
                     return models.Settings.edit(newSettings, frame.options)
                         .then(() => checkedTheme);
                 })
                 .then((checkedTheme) => {
-                    return themeService.getJSON(themeName, checkedTheme);
+                    return themeService.api.getJSON(themeName, checkedTheme);
                 });
+        }
+    },
+
+    install: {
+        headers: {},
+        options: [
+            'source',
+            'ref'
+        ],
+        validation: {
+            options: {
+                source: {
+                    required: true,
+                    values: ['github']
+                },
+                ref: {
+                    required: true
+                }
+            }
+        },
+        permissions: {
+            method: 'add'
+        },
+        async query(frame) {
+            if (frame.options.source === 'github') {
+                const {theme, themeOverridden} = await themeService.api.installFromGithub(frame.options.ref);
+
+                if (themeOverridden) {
+                    this.headers.cacheInvalidate = true;
+                }
+
+                events.emit('theme.uploaded', {name: theme.name});
+
+                return theme;
+            }
         }
     },
 
@@ -51,7 +94,12 @@ module.exports = {
         permissions: {
             method: 'add'
         },
-        query(frame) {
+        async query(frame) {
+            if (limitService.isLimited('customThemes')) {
+                // Sending a bad string to make sure it fails (empty string isn't valid)
+                await limitService.errorIfWouldGoOverLimit('customThemes', {value: '.'});
+            }
+
             // @NOTE: consistent filename uploads
             frame.options.originalname = frame.file.originalname.toLowerCase();
 
@@ -60,13 +108,13 @@ module.exports = {
                 name: frame.file.originalname
             };
 
-            return themeService.storage.setFromZip(zip)
+            return themeService.api.setFromZip(zip)
                 .then(({theme, themeOverridden}) => {
                     if (themeOverridden) {
                         // CASE: clear cache
                         this.headers.cacheInvalidate = true;
                     }
-                    events.emit('theme.uploaded');
+                    events.emit('theme.uploaded', {name: theme.name});
                     return theme;
                 });
         }
@@ -89,7 +137,7 @@ module.exports = {
         query(frame) {
             let themeName = frame.options.name;
 
-            return themeService.storage.getZip(themeName);
+            return themeService.api.getZip(themeName);
         }
     },
 
@@ -112,7 +160,7 @@ module.exports = {
         query(frame) {
             let themeName = frame.options.name;
 
-            return themeService.storage.destroy(themeName);
+            return themeService.api.destroy(themeName);
         }
     }
 };

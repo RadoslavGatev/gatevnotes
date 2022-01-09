@@ -4,7 +4,7 @@
  */
 
 const JobManager = require('@tryghost/job-manager');
-const logging = require('../../../shared/logging');
+const logging = require('@tryghost/logging');
 const sentry = require('../../../shared/sentry');
 
 const errorHandler = (error, workerMeta) => {
@@ -12,6 +12,11 @@ const errorHandler = (error, workerMeta) => {
     logging.error(error);
     sentry.captureException(error);
 };
-const jobManager = new JobManager({logging, errorHandler});
+
+const workerMessageHandler = ({name, message}) => {
+    logging.info(`Worker for job ${name} sent a message: ${message}`);
+};
+
+const jobManager = new JobManager({errorHandler, workerMessageHandler});
 
 module.exports = jobManager;

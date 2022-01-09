@@ -47,3 +47,6 @@ module.exports.createSessionFromToken = sessionFromToken({
     getLookupFromToken: ssoAdapter.getIdentityFromCredentials.bind(ssoAdapter),
     getTokenFromRequest: ssoAdapter.getRequestCredentials.bind(ssoAdapter)
 });
+
+module.exports.sessionService = sessionService;
+module.exports.deleteAllSessions = expressSession.deleteAllSessions;
